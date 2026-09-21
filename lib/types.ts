@@ -73,11 +73,19 @@ export interface ScenarioResult {
   disclaimer: string;
 }
 
+export interface NetworkNeighbor {
+  id: string;
+  name: string;
+  type: string;
+  direction: "incoming" | "outgoing";
+}
+
 export interface NetworkMetrics {
   is_cold_start: boolean;
   total_degree: number;
   in_degree: number;
   out_degree: number;
+  neighbors?: NetworkNeighbor[];
 }
 
 export interface AssessmentResponse {
@@ -119,6 +127,9 @@ export interface AssessmentSnapshotRecord {
   calibrated_pd: number;
   risk_band: RiskBand;
   recommendation: Recommendation;
+  network_metrics?: NetworkMetrics;
+  scenario_results?: ScenarioResult[];
+  explanation_summary?: ShapExplanationSummary;
 }
 
 export interface OfficerDecisionRecord {

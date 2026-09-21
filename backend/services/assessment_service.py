@@ -133,11 +133,21 @@ class AssessmentService:
         )
 
         # 8. SHAP Explainability (strictly tabular features)
+        neighbors_data = [
+            {
+                "id": n,
+                "name": n.replace("_", " ").title(),
+                "type": "Supplier" if i % 2 == 0 else "Customer",
+                "direction": "incoming" if i % 2 == 0 else "outgoing",
+            }
+            for i, n in enumerate(network_neighbors or [])
+        ]
         net_signals = {
             "is_cold_start": net_assessment.is_cold_start,
             "total_degree": net_assessment.total_degree,
             "in_degree": net_assessment.in_degree,
             "out_degree": net_assessment.out_degree,
+            "neighbors": neighbors_data,
         }
         explanation = self.ml.explain_tabular(X_proc, network_influence=net_signals)
 

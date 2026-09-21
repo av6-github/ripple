@@ -245,25 +245,42 @@ class AssessmentRepository:
                 return dict(assessment_row)
 
     def get_assessment_snapshot(self, assessment_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve full assessment details and attached prediction."""
+        """Retrieve full assessment details, prediction, and attached input snapshots."""
         query = """
-        SELECT a.*, p.tabular_pd, p.graph_pd, p.fused_pd, p.calibrated_pd, p.risk_band, p.recommendation
+        SELECT a.*, p.tabular_pd, p.graph_pd, p.fused_pd, p.calibrated_pd, p.risk_band, p.recommendation,
+               ais.graph_features_snapshot AS network_metrics,
+               ais.financial_features_snapshot AS explanation_summary,
+               ais.alternative_features_snapshot AS scenario_results
         FROM assessment a
         LEFT JOIN prediction p ON a.id = p.assessment_id
+        LEFT JOIN assessment_input_snapshot ais ON a.id = ais.assessment_id
         WHERE a.id = %s;
         """
         with self._get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (assessment_id,))
                 res = cur.fetchone()
-                return dict(res) if res else None
+                if not res:
+                    return None
+                data = dict(res)
+                for json_col in ["network_metrics", "explanation_summary", "scenario_results"]:
+                    if isinstance(data.get(json_col), str):
+                        try:
+                            data[json_col] = json.loads(data[json_col])
+                        except Exception:
+                            pass
+                return data
 
     def list_assessments_for_sme(self, sme_id: str) -> List[Dict[str, Any]]:
         """List historical assessments for an SME."""
         query = """
-        SELECT a.*, p.tabular_pd, p.graph_pd, p.fused_pd, p.calibrated_pd, p.risk_band, p.recommendation
+        SELECT a.*, p.tabular_pd, p.graph_pd, p.fused_pd, p.calibrated_pd, p.risk_band, p.recommendation,
+               ais.graph_features_snapshot AS network_metrics,
+               ais.financial_features_snapshot AS explanation_summary,
+               ais.alternative_features_snapshot AS scenario_results
         FROM assessment a
         LEFT JOIN prediction p ON a.id = p.assessment_id
+        LEFT JOIN assessment_input_snapshot ais ON a.id = ais.assessment_id
         WHERE a.sme_id = %s
         ORDER BY a.created_at DESC;
         """
@@ -271,7 +288,17 @@ class AssessmentRepository:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute(query, (sme_id,))
                 rows = cur.fetchall()
-                return [dict(r) for r in rows]
+                results = []
+                for r in rows:
+                    data = dict(r)
+                    for json_col in ["network_metrics", "explanation_summary", "scenario_results"]:
+                        if isinstance(data.get(json_col), str):
+                            try:
+                                data[json_col] = json.loads(data[json_col])
+                            except Exception:
+                                pass
+                    results.append(data)
+                return results
 
     def record_officer_decision(
         self,

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import {
   AssessmentSnapshotRecord,
+  NetworkNeighbor,
   OfficerDecisionRecord,
   ShapFactor,
 } from "@/lib/types";
@@ -404,62 +405,133 @@ export default function AssessmentDetailsPage() {
           <SyntheticBadge isSynthetic={true} />
         </div>
 
-        {/* Ego-Network Visualizer */}
-        <div className="p-6 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800 space-y-4">
-          <div className="flex items-center justify-center gap-8 py-6">
-            {/* Counterparty 1 */}
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-950/80 border border-indigo-300 dark:border-indigo-700 flex items-center justify-center font-bold text-xs text-indigo-700 dark:text-indigo-300">
-                C-1
+        {/* Dynamic Ego-Network Visualizer */}
+        {(() => {
+          const netMetrics = snapshot.network_metrics;
+          const isCold = snapshot.is_cold_start || netMetrics?.is_cold_start || !netMetrics?.neighbors || netMetrics.neighbors.length === 0;
+          const neighbors: NetworkNeighbor[] = netMetrics?.neighbors || [];
+          const suppliers = neighbors.filter((n: NetworkNeighbor) => n.direction === "incoming" || n.type.toLowerCase().includes("supplier"));
+          const buyers = neighbors.filter((n: NetworkNeighbor) => n.direction === "outgoing" || !n.type.toLowerCase().includes("supplier"));
+
+          if (isCold) {
+            return (
+              <div className="p-6 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800 space-y-4">
+                <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-full border-2 border-dashed border-amber-500 bg-amber-50 dark:bg-amber-950/30 flex flex-col items-center justify-center text-amber-700 dark:text-amber-400">
+                      <span className="font-bold text-xs">Target SME</span>
+                      <span className="text-[10px] opacity-75 font-mono">Isolated</span>
+                    </div>
+                  </div>
+                  <div className="text-center max-w-md space-y-1">
+                    <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                      Cold-Start Safety Fallback Active
+                    </p>
+                    <p className="text-[11px] text-zinc-500">
+                      No registered commercial counterparties found in Neo4j graph (Degree = 0). 
+                      Per Rule 4.2 (No Fabricated Risk), network diffusion is suppressed and 100% of score custody derives from tabular financials.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs">
+                  <div>
+                    <span className="text-zinc-500">Degree Connectivity:</span>{" "}
+                    <span className="font-bold text-amber-600">0 (Isolated Node)</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500">Graph Diffusion:</span>{" "}
+                    <span className="font-bold text-zinc-900 dark:text-zinc-100">0% (Pure Tabular)</span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-500">Fallback Policy:</span>{" "}
+                    <span className="font-bold text-indigo-600">Rule 4.2 Safe Exit</span>
+                  </div>
+                </div>
               </div>
-              <span className="text-[11px] font-mono text-zinc-600 dark:text-zinc-400">Supplier A</span>
-              <SyntheticBadge isSynthetic={true} />
-            </div>
+            );
+          }
 
-            {/* Connection Line */}
-            <div className="h-0.5 w-16 sm:w-24 bg-dashed border-t-2 border-indigo-400 dark:border-indigo-600"></div>
+          return (
+            <div className="p-6 rounded-xl bg-zinc-50 dark:bg-zinc-950/70 border border-zinc-200 dark:border-zinc-800 space-y-4">
+              <div className="flex flex-col md:flex-row items-center justify-center gap-6 py-6 overflow-x-auto">
+                {/* Incoming Suppliers */}
+                <div className="flex flex-col items-center gap-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                    Upstream Suppliers ({suppliers.length})
+                  </div>
+                  <div className="flex flex-wrap md:flex-col gap-3 items-center">
+                    {suppliers.map((s: NetworkNeighbor, idx: number) => (
+                      <div key={idx} className="flex flex-col items-center gap-1 p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs text-center min-w-[120px]">
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 flex items-center justify-center font-black text-xs">
+                          S{idx + 1}
+                        </div>
+                        <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{s.name}</span>
+                        <SyntheticBadge isSynthetic={true} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
-            {/* Target SME */}
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-16 h-16 rounded-full bg-indigo-600 text-white font-black text-sm flex items-center justify-center shadow-md">
-                SME
+                {/* Arrow to Target */}
+                <div className="flex flex-col items-center justify-center text-indigo-500 font-mono text-xs">
+                  <span>── supplies ──▶</span>
+                </div>
+
+                {/* Target SME Center */}
+                <div className="flex flex-col items-center gap-1.5 p-4 rounded-xl bg-indigo-600 text-white shadow-md text-center min-w-[130px]">
+                  <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center font-black text-sm">
+                    SME
+                  </div>
+                  <span className="text-xs font-black">Target SME</span>
+                  <span className="text-[10px] opacity-80 font-mono">Ego Center</span>
+                </div>
+
+                {/* Arrow to Buyers */}
+                <div className="flex flex-col items-center justify-center text-indigo-500 font-mono text-xs">
+                  <span>── sells to ──▶</span>
+                </div>
+
+                {/* Outgoing Buyers / Clients */}
+                <div className="flex flex-col items-center gap-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                    Downstream Buyers ({buyers.length})
+                  </div>
+                  <div className="flex flex-wrap md:flex-col gap-3 items-center">
+                    {buyers.map((b: NetworkNeighbor, idx: number) => (
+                      <div key={idx} className="flex flex-col items-center gap-1 p-2.5 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-xs text-center min-w-[120px]">
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-black text-xs">
+                          B{idx + 1}
+                        </div>
+                        <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">{b.name}</span>
+                        <SyntheticBadge isSynthetic={true} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
-              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">Target SME</span>
-              <span className="text-[10px] text-zinc-400 font-mono">Ego Center</span>
-            </div>
 
-            {/* Connection Line */}
-            <div className="h-0.5 w-16 sm:w-24 bg-dashed border-t-2 border-indigo-400 dark:border-indigo-600"></div>
-
-            {/* Counterparty 2 */}
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-12 h-12 rounded-full bg-indigo-100 dark:bg-indigo-950/80 border border-indigo-300 dark:border-indigo-700 flex items-center justify-center font-bold text-xs text-indigo-700 dark:text-indigo-300">
-                C-2
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs">
+                <div>
+                  <span className="text-zinc-500">Degree Connectivity:</span>{" "}
+                  <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                    {neighbors.length} Counterparties ({suppliers.length} In / {buyers.length} Out)
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-500">Graph Diffusion Weight:</span>{" "}
+                  <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                    15% (Weighted Combined)
+                  </span>
+                </div>
+                <div>
+                  <span className="text-zinc-500">Synthetic Edge Policy:</span>{" "}
+                  <span className="font-bold text-amber-600">is_synthetic = true (Rule 4.4)</span>
+                </div>
               </div>
-              <span className="text-[11px] font-mono text-zinc-600 dark:text-zinc-400">Buyer B</span>
-              <SyntheticBadge isSynthetic={true} />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 text-xs">
-            <div>
-              <span className="text-zinc-500">Degree Connectivity:</span>{" "}
-              <span className="font-bold text-zinc-900 dark:text-zinc-100">
-                {snapshot.is_cold_start ? "0 (Isolated)" : "2 Counterparties"}
-              </span>
-            </div>
-            <div>
-              <span className="text-zinc-500">Graph Diffusion Weight:</span>{" "}
-              <span className="font-bold text-zinc-900 dark:text-zinc-100">
-                {snapshot.is_cold_start ? "0% (Tabular Fallback)" : "15% (Weighted Combined)"}
-              </span>
-            </div>
-            <div>
-              <span className="text-zinc-500">Synthetic Edge Policy:</span>{" "}
-              <span className="font-bold text-amber-600">is_synthetic = true</span>
-            </div>
-          </div>
-        </div>
+          );
+        })()}
       </div>
 
       {/* 5. Macroeconomic Scenario Stress Tests */}

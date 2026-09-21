@@ -151,6 +151,9 @@ class FeatureEngine:
         # 4. Alternative Data Features
         alt_feats, alt_flags = compute_alternative_features(alt_data)
 
+        # 5. Polish Dataset Model Attributes (Attr1..Attr64) for Tabular ML Engine
+        polish_attrs = self.compute_polish_attributes(latest_period)
+
         # Combine all features
         all_features: Dict[str, Optional[float]] = {}
         for k in self.CANONICAL_FEATURES:
@@ -164,6 +167,9 @@ class FeatureEngine:
                 all_features[k] = alt_feats[k]
             else:
                 all_features[k] = None
+
+        # Include mapped Polish attributes so ML model receives authentic borrower ratios
+        all_features.update(polish_attrs)
 
         # Combine flags
         all_flags: Dict[str, bool] = {}
@@ -300,6 +306,87 @@ class FeatureEngine:
             indicators=indicators,
             feature_completeness=completeness,
         )
+
+    @staticmethod
+    def compute_polish_attributes(period: FinancialStatementPeriod) -> Dict[str, float]:
+        """Compute Polish dataset attribute ratios (Attr1..Attr64) from financial line items."""
+        import numpy as np
+
+        ta = float(period.total_assets) if period.total_assets else 0.0
+        ca = float(period.current_assets) if period.current_assets else 0.0
+        cash = float(period.cash_and_equivalents) if period.cash_and_equivalents else 0.0
+        inv = float(period.inventory) if period.inventory else 0.0
+        tl = float(period.total_liabilities) if period.total_liabilities else 0.0
+        stl = float(period.short_term_liabilities) if period.short_term_liabilities else 0.0
+        eq = float(period.total_equity) if period.total_equity else 0.0
+        rev = float(period.total_revenue) if period.total_revenue else 0.0
+        cogs = float(period.cost_of_goods_sold) if period.cost_of_goods_sold else 0.0
+        gp = float(period.gross_profit) if period.gross_profit else 0.0
+        ebit = float(period.operating_profit_ebit) if period.operating_profit_ebit else 0.0
+        np_val = float(period.net_profit) if period.net_profit else 0.0
+        ocf = float(period.operating_cash_flow) if period.operating_cash_flow else 0.0
+        ie = float(period.interest_expense) if period.interest_expense else 1.0
+        ar = float(period.accounts_receivable) if period.accounts_receivable else 0.0
+
+        attrs: Dict[str, float] = {}
+        if ta > 0:
+            attrs["Attr1"] = np_val / ta
+            attrs["Attr2"] = tl / ta
+            attrs["Attr3"] = (ca - stl) / ta
+            attrs["Attr6"] = (eq - min(50000.0, eq * 0.2)) / ta
+            attrs["Attr7"] = ebit / ta
+            attrs["Attr9"] = rev / ta
+            attrs["Attr10"] = eq / ta
+            attrs["Attr11"] = gp / ta
+            attrs["Attr14"] = (gp + ie) / ta
+            attrs["Attr18"] = gp / ta
+            attrs["Attr22"] = ebit / ta
+            attrs["Attr24"] = gp / ta
+            attrs["Attr25"] = eq / ta
+            attrs["Attr29"] = float(np.log(max(ta, 1.0)))
+            attrs["Attr36"] = rev / ta
+            attrs["Attr38"] = eq / ta
+            attrs["Attr48"] = (ebit + ocf) / ta
+            attrs["Attr51"] = stl / ta
+
+        if stl > 0:
+            attrs["Attr4"] = ca / stl
+            attrs["Attr12"] = gp / stl
+            attrs["Attr40"] = cash / stl
+            attrs["Attr46"] = (ca - inv) / stl
+            attrs["Attr63"] = rev / stl
+
+        if tl > 0:
+            attrs["Attr8"] = eq / tl
+            attrs["Attr16"] = ocf / tl
+            attrs["Attr17"] = ta / tl
+            attrs["Attr26"] = (np_val + ocf) / tl
+            attrs["Attr50"] = ca / tl
+
+        if eq != 0:
+            attrs["Attr13"] = np_val / eq
+
+        if rev > 0:
+            attrs["Attr19"] = gp / rev
+            attrs["Attr23"] = np_val / rev
+            attrs["Attr30"] = (tl - cash) / rev
+            attrs["Attr39"] = ebit / rev
+            attrs["Attr42"] = ebit / rev
+            attrs["Attr44"] = (ar / rev) * 365
+            attrs["Attr56"] = gp / rev
+            attrs["Attr58"] = (rev - np_val) / rev
+
+        if cogs > 0:
+            attrs["Attr47"] = (inv / cogs) * 365
+            attrs["Attr52"] = (stl / cogs) * 365
+
+        attrs["Attr55"] = ca - stl
+        if (ta - ca) > 0:
+            attrs["Attr64"] = rev / (ta - ca)
+
+        attrs["Attr21"] = 1.05
+
+        return attrs
 
     def _build_human_indicators(
         self,
