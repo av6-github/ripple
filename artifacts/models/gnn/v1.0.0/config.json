@@ -1,0 +1,13 @@
+{
+  "version": "v1.0.0",
+  "in_channels": 67,
+  "hidden_channels": 32,
+  "embedding_dim": 16,
+  "dropout": 0.2,
+  "test_metrics": {
+    "roc_auc": 0.6126,
+    "pr_auc": 0.1244
+  },
+  "synthetic_edges_count": 11820,
+  "is_synthetic_disclosed": true
+}

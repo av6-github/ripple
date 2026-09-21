@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: ripple-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - DATABASE_URL=${DATABASE_URL}
+      - NEO4J_URI=${NEO4J_URI}
+      - NEO4J_USERNAME=${NEO4J_USERNAME:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - PINECONE_API_KEY=${PINECONE_API_KEY}
+      - PINECONE_INDEX=${PINECONE_INDEX:-ripple-sme-embeddings}
+      - JWT_SECRET=${JWT_SECRET:-ripple-dev-secret-key-32-bytes-long}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ripple-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://backend:8000
+      - PORT=3000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ripple-network
