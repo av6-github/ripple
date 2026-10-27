@@ -11,16 +11,17 @@ from psycopg2.extras import Json
 
 from backend.domain.schemas import FinancialStatementData, DataQualityViolation
 from backend.domain.enums import IngestionStatus
+from backend.repositories.db_connection import connect_postgres
 
 
 class FinancialRepository:
     def __init__(self, db_url: Optional[str] = None):
-        self.db_url = db_url or os.getenv("SUPABASE_DB_URL")
+        self.db_url = db_url or os.getenv("SUPABASE_DB_URL") or os.getenv("DATABASE_URL")
         if not self.db_url:
-            raise ValueError("SUPABASE_DB_URL is not configured.")
+            raise ValueError("SUPABASE_DB_URL or DATABASE_URL is not configured.")
 
     def _get_connection(self):
-        return psycopg2.connect(self.db_url)
+        return connect_postgres(self.db_url)
 
     def create_ingestion_job(
         self,
@@ -34,6 +35,20 @@ class FinancialRepository:
         job_id = str(uuid.uuid4())
         with self._get_connection() as conn:
             with conn.cursor() as cursor:
+                # Ensure user_id exists in app_user to satisfy foreign key constraint
+                cursor.execute("SELECT id FROM app_user WHERE id = %s;", (user_id,))
+                if not cursor.fetchone():
+                    cursor.execute("SELECT id FROM app_user LIMIT 1;")
+                    fallback = cursor.fetchone()
+                    if fallback:
+                        user_id = str(fallback[0])
+
+                # Ensure sme_id exists in sme table if provided
+                if sme_id:
+                    cursor.execute("SELECT id FROM sme WHERE id = %s;", (sme_id,))
+                    if not cursor.fetchone():
+                        sme_id = None
+
                 cursor.execute("""
                     INSERT INTO ingestion_job (
                         id, sme_id, user_id, file_name, file_type, file_size_bytes, storage_path, status

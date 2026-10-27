@@ -77,9 +77,9 @@ class RecommendationEngine:
                 key_concerns=concerns,
             )
 
-        # 2. Check Higher Risk Conditions
-        if negative_equity or fused_pd >= 0.10 or flags.get("negative_equity_flag"):
-            rationale.append(f"Elevated default probability ({fused_pd:.2%}) or negative equity solvency distress.")
+        # 2. Check Higher Risk Conditions (Basel II/III SME Band D alignment >= 15%)
+        if negative_equity or fused_pd >= 0.15 or flags.get("negative_equity_flag"):
+            rationale.append(f"Substantial default probability ({fused_pd:.2%}) or negative equity solvency distress.")
             if negative_equity or flags.get("negative_equity_flag"):
                 concerns.append("Negative equity indicates balance-sheet capital erosion.")
             return DecisionRecommendation(

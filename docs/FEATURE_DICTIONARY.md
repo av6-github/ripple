@@ -296,6 +296,16 @@ For each feature, the dictionary defines:
 - **Expected Sign**: `-`
 - **Null Policy**: Clamped to $[0.0, 20.0]$.
 
+#### `working_capital_fragility_velocity`
+- **Display Label**: Working Capital Fragility Velocity (WCFV)
+- **Formula**: `((dso - dpo) / max(|cash_conversion_cycle|, 1.0)) * (short_term_liabilities / max(total_equity, 1.0))`
+- **Inputs Required**: `dso`, `dpo`, `cash_conversion_cycle`, `short_term_liabilities`, `total_equity` (or Polish attrs $X_{44}, X_{52}, X_{47}, X_{51}, X_{10}$)
+- **Unit**: Velocity Index ($\ge 0$ for structural liquidity cash drain; $< 0$ for positive cash buffer)
+- **Source Category**: Operating Efficiency & Liquidity Fragility
+- **Economic Rationale**: Traditional credit models view working capital as a static stock measure (e.g. Current Ratio or Working Capital / Assets). However, SMEs predominantly fail from dynamic liquidity exhaustion caused by trade credit timing mismatches: customers taking longer to pay (expanding DSO) while supplier or payroll payables mature (short DPO), funded by rolling short-term debt rather than equity. WCFV captures the *velocity* of this cash drain normalized by the operating cycle and accelerated by short-term balance sheet leverage.
+- **Expected Sign**: `+` (Higher fragility velocity increases PD)
+- **Null Policy**: If `total_equity <= 0` (negative equity / insolvent), leverage factor is penalized at 10.0. Clamped to $[-10.0, 50.0]$. Missing inputs return `None`.
+
 ---
 
 ### 2.7 Trend & Growth Metrics

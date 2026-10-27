@@ -65,6 +65,27 @@ def compute_efficiency_ratios(
     # 5. Asset Turnover = Revenue / Total Assets
     features["asset_turnover"] = safe_div(rev, ta, default=None, min_val=0.0, max_val=20.0)
 
+    # 6. Working Capital Fragility Velocity (WCFV)
+    # WCFV = ((DSO - DPO) / max(|CCC|, 1.0)) * (Short-Term Liabilities / max(Total Equity, 1.0))
+    stl = period.short_term_liabilities
+    eq = period.total_equity
+    ccc = features.get("cash_conversion_cycle")
+    if dso is not None and dpo is not None and ccc is not None:
+        trade_credit_gap = dso - dpo
+        ccc_norm = max(abs(ccc), 1.0)
+        gap_intensity = trade_credit_gap / ccc_norm
+
+        if stl is not None and eq is not None:
+            if eq <= 0.0:
+                leverage_mult = 10.0 if stl > 0 else 1.0
+            else:
+                leverage_mult = safe_div(stl, eq, default=1.0, min_val=0.0, max_val=20.0)
+            features["working_capital_fragility_velocity"] = round(float(gap_intensity * leverage_mult), 4)
+        else:
+            features["working_capital_fragility_velocity"] = round(float(gap_intensity), 4)
+    else:
+        features["working_capital_fragility_velocity"] = None
+
     return features
 
 

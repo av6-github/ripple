@@ -33,6 +33,11 @@ def neo4j_driver():
         pytest.skip("Neo4j credentials not set in .env")
     from neo4j import GraphDatabase
     driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_pass))
+    try:
+        driver.verify_connectivity()
+    except Exception as exc:
+        driver.close()
+        pytest.skip(f"Neo4j AuraDB instance is unavailable or paused ({exc})")
     yield driver
     driver.close()
 

@@ -141,3 +141,82 @@ class Neo4jGraphClient:
         """
         with self.driver.session() as session:
             session.run(query, id=business_id)
+
+    def get_counterparties_for_business(self, business_id: str) -> List[Dict[str, Any]]:
+        """Retrieve all connected commercial counterparties and edge properties from Neo4j AuraDB."""
+        query = """
+        MATCH (b:Business {id: $id})-[r:COMMERCIAL_RELATION]-(c:Business)
+        RETURN c.id AS id, c.name AS name, r.type AS rel_type,
+               startNode(r).id = b.id AS is_outgoing,
+               r.annual_volume AS annual_volume, r.tenure_months AS tenure_months,
+               r.is_synthetic AS is_synthetic
+        """
+        results = []
+        try:
+            with self.driver.session() as session:
+                records = session.run(query, id=business_id).data()
+        except Exception as exc:
+            import logging
+            logging.getLogger("ripple-neo4j").warning("Neo4j AuraDB query failed (fallback to PostgreSQL available): %s", exc)
+            return []
+
+        for r in records:
+                raw_id = r["id"]
+                name = raw_id
+                cid = raw_id
+                role = "Counterparty"
+                if "[ID:" in raw_id and "Role:" in raw_id:
+                    try:
+                        name = raw_id.split("[ID:")[0].strip()
+                        meta_part = raw_id.split("[ID:")[1]
+                        cid = meta_part.split("|")[0].strip()
+                        role = meta_part.split("Role:")[1].replace("]", "").strip()
+                    except Exception:
+                        pass
+                elif r.get("name"):
+                    name = r["name"]
+
+                role_lower = role.lower()
+                cid_lower = cid.lower()
+                rel_type = (r.get("rel_type") or "").upper()
+                if (
+                    "partner" in role_lower
+                    or "hub" in role_lower
+                    or "lab" in role_lower
+                    or "prt-" in cid_lower
+                    or "PARTNER" in rel_type
+                ):
+                    direction = "bidirectional"
+                elif (
+                    "supplier" in role_lower
+                    or "vendor" in role_lower
+                    or "provider" in role_lower
+                    or "upstream" in role_lower
+                    or "lessor" in role_lower
+                    or "sup-" in cid_lower
+                ):
+                    direction = "incoming"
+                elif (
+                    "buyer" in role_lower
+                    or "client" in role_lower
+                    or "byr-" in cid_lower
+                    or "downstream" in role_lower
+                ):
+                    direction = "outgoing"
+                elif rel_type == "SUPPLIES_TO":
+                    direction = "incoming"
+                else:
+                    direction = "outgoing"
+
+                results.append({
+                    "raw_id": raw_id,
+                    "id": cid,
+                    "name": name,
+                    "role": role,
+                    "direction": direction,
+                    "rel_type": rel_type,
+                    "annual_volume": r.get("annual_volume") or 75000.0,
+                    "tenure_months": r.get("tenure_months") or 24,
+                    "is_synthetic": bool(r.get("is_synthetic", True)),
+                })
+        return results

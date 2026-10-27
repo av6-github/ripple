@@ -197,3 +197,68 @@ class ScenarioStressTester:
             description="Simulates combined macroeconomic stagnation: 15% demand drop, 15% cost inflation, and higher debt servicing.",
             shock_summary=summary,
         )
+
+    def simulate_custom_scenario(
+        self,
+        x: np.ndarray,
+        baseline_pd: float,
+        revenue_drop_pct: float = 0.0,
+        rate_hike_bps: int = 0,
+        dso_increase_days: int = 0,
+        cost_inflation_pct: float = 0.0,
+    ) -> ScenarioResult:
+        """Scenario 5: Interactive Custom Macroeconomic Scenario with user-defined shocks."""
+        x_shocked = x.copy().reshape(-1)
+        name_to_idx = {name: i for i, name in enumerate(self.feature_names)}
+
+        # 1. Revenue & Margin contraction
+        if revenue_drop_pct > 0:
+            if "Attr9" in name_to_idx:
+                x_shocked[name_to_idx["Attr9"]] *= max(0.05, 1.0 - revenue_drop_pct)
+            if "Attr19" in name_to_idx:
+                x_shocked[name_to_idx["Attr19"]] *= max(-5.0, 1.0 - revenue_drop_pct * 1.5)
+            if "Attr23" in name_to_idx:
+                x_shocked[name_to_idx["Attr23"]] *= max(-5.0, 1.0 - revenue_drop_pct * 2.0)
+
+        # 2. Input cost inflation
+        if cost_inflation_pct > 0:
+            if "Attr58" in name_to_idx:
+                x_shocked[name_to_idx["Attr58"]] *= (1.0 + cost_inflation_pct)
+            if "Attr1" in name_to_idx:  # Net profit / total assets declines
+                x_shocked[name_to_idx["Attr1"]] -= (cost_inflation_pct * 0.1)
+
+        # 3. Monetary rate tightening
+        if rate_hike_bps > 0:
+            if "Attr27" in name_to_idx:
+                # Interest coverage compression: coverage * (1 / (1 + hike/400))
+                factor = 1.0 / (1.0 + rate_hike_bps / 400.0)
+                x_shocked[name_to_idx["Attr27"]] = max(0.05, x_shocked[name_to_idx["Attr27"]] * factor)
+
+        # 4. Working capital squeeze
+        if dso_increase_days > 0:
+            if "Attr44" in name_to_idx:
+                x_shocked[name_to_idx["Attr44"]] += dso_increase_days
+            if "Attr40" in name_to_idx:
+                cash_drain = min(0.70, dso_increase_days / 100.0)
+                x_shocked[name_to_idx["Attr40"]] = max(0.0, x_shocked[name_to_idx["Attr40"]] * (1.0 - cash_drain))
+
+        summary = {
+            "revenue_shock_pct": round(revenue_drop_pct * 100, 1),
+            "rate_hike_bps": rate_hike_bps,
+            "dso_increase_days": dso_increase_days,
+            "cost_inflation_pct": round(cost_inflation_pct * 100, 1),
+        }
+
+        return self._evaluate_shocked_features(
+            shocked_x=x_shocked,
+            baseline_pd=baseline_pd,
+            scenario_id="SCEN-CUSTOM",
+            scenario_name="Interactive Custom Stress Test",
+            description=(
+                f"Officer-tailored stress simulation: {revenue_drop_pct:.0%} revenue drop, "
+                f"+{rate_hike_bps} bps rate hike, +{dso_increase_days} days receivables lag, "
+                f"+{cost_inflation_pct:.0%} cost inflation."
+            ),
+            shock_summary=summary,
+        )
+

@@ -24,7 +24,7 @@ logger = logging.getLogger("ripple-seed")
 
 DEMO_SMES = [
   {
-    "name": "PolTech Solutions Sp. z o.o.",
+    "name": "PolTech Solutions Sp. z o.o. [ID: PL-5219483011 | Role: Tier-1 Enterprise Tech & Cloud Core]",
     "tax_id": "PL-5219483011",
     "sector": "technology",
     "statements": [
@@ -47,12 +47,18 @@ DEMO_SMES = [
         "interest_expense": 12000.0,
       }
     ],
-    "counterparties": ["SUPPLIER_CLOUD_EU", "CLIENT_ENTERPRISE_PL"],
+    "counterparties": [
+      "CloudInfra Europe BV [ID: SUP-PL-01 | Role: Upstream Tier-1 Cloud Infrastructure Provider]",
+      "MicroSilicon Fabrication S.A. [ID: SUP-PL-02 | Role: Upstream Semiconductor Hardware Vendor]",
+      "Warsaw FinTech Services [ID: BYR-PL-01 | Role: Downstream Banking Software Client]",
+      "Nordic Telecom Systems [ID: BYR-PL-02 | Role: Downstream Enterprise Telecom Buyer]",
+      "Central European Data Hub [ID: PRT-PL-01 | Role: Strategic Regional Distribution Partner]",
+    ],
     "decision": "APPROVE",
     "officer_notes": "Strong liquidity profile and zero long-term debt. Approved under standard prime SME facility.",
   },
   {
-    "name": "Silesia Metalworks S.A.",
+    "name": "Silesia Metalworks S.A. [ID: PL-6348192033 | Role: Heavy Industrial Metal Fabricator]",
     "tax_id": "PL-6348192033",
     "sector": "manufacturing",
     "statements": [
@@ -75,12 +81,18 @@ DEMO_SMES = [
         "interest_expense": 24000.0,
       }
     ],
-    "counterparties": ["SUPPLIER_STEEL_KATOWICE", "BUYER_AUTOMOTIVE_DE"],
+    "counterparties": [
+      "Katowice Metallurgical Coking [ID: SUP-SM-01 | Role: Raw Metallurgical Ore Supplier]",
+      "Silesian Smelting Reagents [ID: SUP-SM-02 | Role: Industrial Heat & Chemical Reagents Vendor]",
+      "Kraków Heavy Machinery [ID: BYR-SM-01 | Role: Heavy Equipment Manufacturer]",
+      "Daimler Commercial Vehicles East [ID: BYR-SM-02 | Role: Commercial Vehicle OEM Buyer]",
+      "Silesia Rail Haulage Sp. k. [ID: PRT-SM-01 | Role: Heavy Industrial Freight Logistics Partner]",
+    ],
     "decision": "FURTHER_REVIEW",
     "officer_notes": "Moderate debt service coverage. Referred to credit committee for covenant structure review.",
   },
   {
-    "name": "Mazovia Logistics Sp. k.",
+    "name": "Mazovia Logistics Sp. k. [ID: PL-7013928174 | Role: Cold-Chain & Pan-European Freight Core]",
     "tax_id": "PL-7013928174",
     "sector": "transportation",
     "statements": [
@@ -103,12 +115,18 @@ DEMO_SMES = [
         "interest_expense": 18000.0,
       }
     ],
-    "counterparties": ["SUPPLIER_FUEL_PKN", "CLIENT_RETAIL_CHAIN"],
+    "counterparties": [
+      "Orlen Petrochemical Fleet Terminal [ID: SUP-ML-01 | Role: Primary Fleet Diesel & Fuel Supplier]",
+      "Scania Commercial Fleet Leasing [ID: SUP-ML-02 | Role: Commercial Vehicle Fleet Lessor]",
+      "Biedronka Retail Distribution [ID: BYR-ML-01 | Role: FMCG Supermarket Network Client]",
+      "Pekao Pharmaceutical Cold Hub [ID: BYR-ML-02 | Role: Pharmaceutical Cold Storage Client]",
+      "Mazovian Highway Maintenance Hub [ID: PRT-ML-01 | Role: Regional Vehicle Servicing Partner]",
+    ],
     "decision": "FURTHER_REVIEW",
     "officer_notes": "Elongated DSO collection period creates working capital friction. Requires quarterly receivables covenant.",
   },
   {
-    "name": "Baltic Retail Group Sp. z o.o.",
+    "name": "Baltic Retail Group Sp. z o.o. [ID: PL-5830192847 | Role: Regional Multi-Brand Retail Chain]",
     "tax_id": "PL-5830192847",
     "sector": "retail",
     "statements": [
@@ -131,12 +149,18 @@ DEMO_SMES = [
         "interest_expense": 22000.0,
       }
     ],
-    "counterparties": ["SUPPLIER_FMCG_DIST", "BUYER_LOCAL_OUTLET"],
+    "counterparties": [
+      "Amber Coast Wholesale Distributors [ID: SUP-BR-01 | Role: FMCG Wholesale Confectionery Supplier]",
+      "Vistula Packaging Solutions [ID: SUP-BR-02 | Role: Commercial Packaging & Paperboard Vendor]",
+      "Pomeranian Consumer Cooperative [ID: BYR-BR-01 | Role: Municipal Retail Cooperative Buyer]",
+      "Gdynia Port Supermarket Franchisees [ID: BYR-BR-02 | Role: Coastal Outlet Network Franchisee]",
+      "Baltic Express Last-Mile Couriers [ID: PRT-BR-01 | Role: Regional E-Commerce Delivery Partner]",
+    ],
     "decision": "REJECT",
     "officer_notes": "Severe leverage (D/E > 20x), operating loss, and negative cash flow. Application declined.",
   },
   {
-    "name": "Kraków Precision Dynamics",
+    "name": "Kraków Precision Dynamics [ID: PL-6761928374 | Role: Aerospace & Defense CNC Engineering]",
     "tax_id": "PL-6761928374",
     "sector": "engineering",
     "statements": [
@@ -159,7 +183,13 @@ DEMO_SMES = [
         "interest_expense": 14000.0,
       }
     ],
-    "counterparties": ["SUPPLIER_CNC_PARTS", "CLIENT_AEROSPACE_EU"],
+    "counterparties": [
+      "AeroTitanium Certified Alloys [ID: SUP-KP-01 | Role: Certified Titanium Aerospace Alloy Supplier]",
+      "OptoLaser Sensor Components [ID: SUP-KP-02 | Role: High-Precision Laser Sensor Vendor]",
+      "Airbus Defence Systems Poland [ID: BYR-KP-01 | Role: Aerospace Defense Prime Contractor]",
+      "Lufthansa Technik Overhaul Kraków [ID: BYR-KP-02 | Role: Aircraft Maintenance & Overhaul Client]",
+      "Kraków University Materials Testing Labs [ID: PRT-KP-01 | Role: Certified R&D Materials Testing Partner]",
+    ],
     "decision": "APPROVE",
     "officer_notes": "High margins, healthy debt coverage, and solid operating cash flows. Facility approved.",
   },
@@ -198,16 +228,27 @@ def seed_demo_environment(reset: bool = False):
         counterparties = item.get("counterparties", [])
         for i, c_name in enumerate(counterparties):
             # Enforce is_synthetic = True on every commercial trade relationship
-            neo4j_client.upsert_commercial_relation(
-                source_id=item["tax_id"],
-                target_id=c_name,
-                rel_type="SUPPLIES_TO" if i % 2 == 0 else "BUYS_FROM",
-                annual_volume=75_000.0,
-                tenure_months=24,
-                is_synthetic=True,
-            )
+            try:
+                neo4j_client.upsert_commercial_relation(
+                    source_id=item["tax_id"],
+                    target_id=c_name,
+                    rel_type="SUPPLIES_TO" if i % 2 == 0 else "BUYS_FROM",
+                    annual_volume=75_000.0 + (i * 25000.0),
+                    tenure_months=24 + (i * 6),
+                    is_synthetic=True,
+                )
+            except Exception as e:
+                logger.warning(f"Neo4j relation upsert failed (non-critical): {e}")
+
             edges.append([0, i + 1])
             edges.append([i + 1, 0])
+
+        # Add cross-edges among counterparties for richer topology (>= 5 nodes)
+        if len(counterparties) >= 4:
+            edges.append([1, 2])
+            edges.append([2, 1])
+            edges.append([3, 4])
+            edges.append([4, 3])
 
         # 4. Execute Full Multi-Modal Risk Assessment
         try:

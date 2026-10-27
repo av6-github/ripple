@@ -72,6 +72,25 @@ class MLClient:
             baseline_pd=baseline_pd,
         )
 
+    def run_custom_scenario(
+        self,
+        X_features: np.ndarray,
+        baseline_pd: float,
+        revenue_drop_pct: float = 0.0,
+        rate_hike_bps: int = 0,
+        dso_increase_days: int = 0,
+        cost_inflation_pct: float = 0.0,
+    ) -> ScenarioResult:
+        """Execute counterfactual custom scenario stress test."""
+        return self.scenario_tester.simulate_custom_scenario(
+            x=X_features,
+            baseline_pd=baseline_pd,
+            revenue_drop_pct=revenue_drop_pct,
+            rate_hike_bps=rate_hike_bps,
+            dso_increase_days=dso_increase_days,
+            cost_inflation_pct=cost_inflation_pct,
+        )
+
     def project_horizons(self, baseline_pd: float) -> Dict[str, float]:
         """Project 1- to 5-year default term structure."""
         return self.horizon_projector.project_term_structure(baseline_pd)

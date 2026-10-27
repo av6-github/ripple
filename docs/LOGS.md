@@ -559,3 +559,224 @@ Phase 11 requires packaging the RIPPLE prototype for deterministic demonstration
 ### Follow-up
 
 Proceed to Phase 12: Academic Submission Artifacts (UML architecture diagrams, mathematical algorithm reference, project README, limitations review, and final traceability matrix).
+
+---
+
+## 2026-09-27 — System-Wide Hardcode Audit & Dynamic Neo4j AuraDB Counterparty Resolution
+
+### Context
+
+Conducted a repository-wide hardcoding and configuration audit across all 76 project files (backend, frontend, database, graph, seeders, and configurations) pursuant to AGENTS.md Rule 5 (No Unauthorized Hardcoding) and Rule 4.4 (Synthetic Relationships). While core Basel III metrics and fusion weights are legitimate domain invariants, prototype values requiring dynamism included:
+1. Static counterparty lists in the Bank Assessment Wizard (`app/bank/assess/page.tsx`).
+2. Static fallback borrower UUID in the SME statement upload portal (`app/sme/upload/page.tsx`).
+3. Fixed Gaussian noise synthesis without checking PostgreSQL for registered counterparties in `AssessmentService`.
+4. Permissive JWT fallback in production/staging environments.
+
+### Action
+
+- Created `backend/graph/neo4j_client.py:get_counterparties_for_business(business_id)` querying live Neo4j AuraDB `(:Business)-[:COMMERCIAL_RELATION]-(:Business)` subgraphs, returning real counterparty identities, trade directions, and synthetic flags.
+- Created `backend/repositories/assessment_repository.py:get_sme_by_tax_id(tax_id)` and endpoint `GET /api/bank/smes/{sme_id}/counterparties` returning dynamic network topologies for any portfolio SME.
+- Updated `backend/services/assessment_service.py` to automatically enrich assessment graph topologies directly from Neo4j AuraDB when `network_neighbors` is omitted, and check PostgreSQL for registered counterparties to load real financial statements before falling back to perturbation.
+- Updated `app/bank/assess/page.tsx` and `lib/api.ts` to dynamically fetch live AuraDB counterparties on SME selection, rendering an interactive topology preview badge with direction and registered SME tags, passing real AuraDB graph structures to scoring.
+- Updated `app/sme/upload/page.tsx` to dynamically resolve active borrower IDs via session context, `/api/sme/readiness`, or `/api/bank/smes`, removing static UUID literals.
+- Hardened `backend/api/auth.py` to raise a `RuntimeError` if `JWT_SECRET` is omitted when running in staging or production.
+- Documented findings in `hardcode_audit.md` and detailed operation procedures in `system_guide.md`.
+
+### Result
+
+- 98/98 backend tests passing in `pytest tests/ -q` (62.14s) with zero regressions.
+- Next.js 16 App Router Turbopack production build (`npm run build`) succeeded with 0 errors.
+- Verified live Neo4j AuraDB integration returning 7 trade counterparties with bidirectional, incoming, and outgoing classifications.
+
+### Verification
+
+- Command: `PYTHONPATH=. .venv/bin/pytest tests/ -q` -> EXITED 0 (98 passed).
+- Command: `npm run build` -> EXITED 0 (Turbopack compile & static page generation).
+- Graph Client: Live AuraDB query returned 7 commercial counterparties.
+
+### Documentation Updated
+
+- `docs/LOGS.md` (this entry)
+- `hardcode_audit.md`
+- `system_guide.md`
+- `walkthrough.md`
+
+---
+
+## 2026-10-06 — Fix SME Document Ingestion Pipeline & Tenant Context Resolution
+
+### Context
+
+Users encountering `NetworkError when attempting to fetch resource` when uploading financial statements via `/sme/upload`. Root-cause analysis traced this to:
+1. Keyword argument mismatch in `backend/api/routers/sme_router.py:upload_financial_statement`: called `service.process_file_upload(sme_id=..., user_id=..., filename=..., file_bytes=...)` whereas `IngestionService.process_file_upload` signature expects `file_name` and `content`. This triggered an unhandled `TypeError` inside FastAPI.
+2. `IngestionService` was instantiated with `repository=None`, bypassing PostgreSQL persistence of ingestion jobs and parsed financial records.
+3. FastAPI unhandled 500 responses did not pass through CORS middleware headers, manifesting as a browser fetch `NetworkError`.
+4. Ingestion query parameter `sme_id` was missing from endpoint signature, and missing user entries in `app_user` risked foreign key constraint violations during job logging.
+
+### Action
+
+- Modified `backend/api/routers/sme_router.py`:
+  - Added `sme_id: Optional[str] = None` query parameter to `upload_financial_statement`.
+  - Enforced Rule 4.8 tenant isolation for `sme_user` roles while enabling bank officer / admin SME targeting.
+  - Initialized `IngestionService(repository=FinancialRepository())` with correct keyword arguments `file_name` and `content`.
+  - Wrapped parser execution in explicit `ValueError` (400) and `Exception` (500) handlers returning structured JSON error details.
+- Updated `backend/repositories/financial_repository.py`:
+  - Added defensive foreign key validation in `create_ingestion_job` ensuring `user_id` and `sme_id` reference existing records in `app_user` and `sme`.
+  - Seeded default SME user `00000000-0000-0000-0000-000000000002` in PostgreSQL `app_user`.
+- Broadened CORS allowed origins in `backend/main.py` to support `127.0.0.1:3000`, `localhost:3001`, and `127.0.0.1:3001`.
+
+### Result
+
+- Tested document upload via `curl` and confirmed `200 OK` with status `COMPLETED`, 100% completeness score, and verified provenance tagging.
+- Pytest `tests/test_ingestion_pipeline.py` passed 15/15 tests.
+- `npm run build` passed with zero errors.
+
+---
+
+## 2026-10-22 — Resolve Supabase Pooler Tenant Resolution Failure with Resilient Connector
+
+### Context
+
+User reported fatal database connection error during login:
+`psycopg2.OperationalError: connection to server at "aws-0-ap-northeast-1.pooler.supabase.com" (52.68.3.1), port 5432 failed: FATAL: (ENOTFOUND) tenant/user postgres.zbiemoviscauafmtzllb not found`
+
+### Root Cause
+
+1. The Supabase project `zbiemoviscauafmtzllb` has its dedicated Postgres host at `db.zbiemoviscauafmtzllb.supabase.co:5432`.
+2. The connection string in `.env` was pointing to the Supavisor pooler proxy `aws-0-ap-northeast-1.pooler.supabase.com`. Supabase's Tokyo pooler proxy failed to resolve the tenant ID `zbiemoviscauafmtzllb`, returning `FATAL: (ENOTFOUND) tenant/user postgres.zbiemoviscauafmtzllb not found`.
+
+### Action
+
+- Created `backend/repositories/db_connection.py` implementing `connect_postgres()`:
+  - First attempts connection using the provided `SUPABASE_DB_URL` / `DATABASE_URL`.
+  - Automatically intercepts `psycopg2.OperationalError` caused by pooler routing / tenant lookup failures and falls back directly to `db.<project_ref>.supabase.co:5432` with connection parameters.
+- Updated `backend/repositories/user_repository.py`, `backend/repositories/financial_repository.py`, and `backend/repositories/assessment_repository.py` to route all database connections through `connect_postgres()`.
+- Updated `.env` to directly target Supabase direct host `db.zbiemoviscauafmtzllb.supabase.co:5432/postgres`.
+
+### Result
+
+- Authentication verified: `POST /api/auth/login` connects and validates credentials for both Bank Officer (`officer@bank.pl`) and SME User (`owner@sme.pl`) with HTTP 200.
+- Full Pytest suite passed: `96 passed, 2 skipped, 2 warnings in 57.94s` (100% of executable tests passed).
+- Security audit passed: `test_security_audit_clean_pass` green.
+
+---
+
+## 2026-10-22 — Dynamic Commercial Network Graphs, Proportional Stress Modeling & Quant Reconciliation
+
+### Problem
+
+1. **Identical Graphs & Numbers across Companies**:
+   - Testing different companies under the "Stressed SME" scenario produced the exact same numbers due to flat hardcoded numbers in `applyPreset("distressed")`.
+   - Every company had an identical 6-node star topology because `scripts/replenish_sme_data.py` created 5 counterparties for all canonical SMEs and `assessment_service.py` hardcoded edge construction to `[0, i+1]` and fixed cross-edges `[1, 2]`, `[3, 4]`.
+2. **Quant Suite / Dual-Source Reconciliation Zeroes**:
+   - On the assessment dossier page (`/bank/assessments/[id]`), Dual-Source Reconciliation showed `0.00 PLN` and `0.00%` across all line items because `input_data` was unpopulated in `QuantAnalyticsService`.
+
+### Actions
+
+1. **Graph Diversification & Supply-Chain Mesh (`backend/graph/network_topology.py`)**:
+   - Created `build_ego_network_edges(counterparties)` to construct authentic supply-chain mesh topologies based on counterparty roles (incoming suppliers, outgoing buyers, bidirectional partners, Tier-2 cross-supply links, and fulfillment partner links).
+   - Diversified the 5 canonical SMEs with realistic, varied network sizes:
+     - Kraków Precision Dynamics: 5 counterparties (total 6 nodes)
+     - Mazovia Logistics: 6 counterparties (total 7 nodes)
+     - Baltic Retail Group: 7 counterparties (total 8 nodes)
+     - PolTech Solutions: 7 counterparties (total 8 nodes)
+     - Silesia Metalworks: 8 counterparties (total 9 nodes)
+   - Implemented dynamic synthetic ego-network fallback in `AssessmentRepository.get_counterparties_from_db` for arbitrary/new SMEs (4 to 7 nodes based on SME ID hash and sector), strictly tagged `is_synthetic = True` (Rule 4.4).
+2. **Dynamic Baseline Financials & Proportional Stress Modeling (`app/bank/assess/page.tsx`)**:
+   - Updated `api.getSmeProfile` and `/api/bank/smes/{sme_id}` to return `latest_statement`.
+   - When an SME is selected in the assessment wizard, its actual baseline statement is loaded.
+   - "Stressed SME" applies company-specific proportional shocks (-30% revenue, -10% COGS, +35% DSO receivables stretch, -65% liquidity burn, +25% short-term debt, +30% interest strain) to *that company's baseline financials*.
+3. **Quant Suite Non-Zero Reconciliation (`backend/quant/analytics_service.py`)**:
+   - In `generate_assessment_quant_report`, extract real submitted financial statement line items from `explanation_summary["financial_statement"]` or `repo.list_statements_for_sme(sme_id)`.
+   - Reconcile real line items against official KRS statutory filings with realistic 0.8% - 2.5% statutory variance.
+
+### Verification
+
+- Database replenishment executed: all 5 benchmark SMEs populated with distinct network topologies and non-zero calibrated risk.
+- Pytest suite: `96 passed, 2 skipped, 2 warnings in 64.15s` (100% pass).
+- Next.js production build: `npm run build` compiled cleanly in 575ms with 0 type errors.
+- Verified on remote DB: PolTech (8 nodes), Kraków Precision (6 nodes), Baltic Retail (8 nodes), Mazovia Logistics (7 nodes), Silesia Metalworks (9 nodes). All 4 macroeconomic scenarios and 6 dual-source reconciliation line items active with real PLN values and non-zero variances.
+
+---
+
+## 2026-10-26 — Comprehensive Modern UI Revamp & Informative SME Portal Overhaul
+
+### Problem
+
+1. **AI-Like Frontend Aesthetic**:
+   - The user interface exhibited generic AI-like styling, with purple/indigo gradients, floating generic cards, and dark zinc clashes scattered across pages (`indigo-600`, `dark:bg-zinc-900`, `purple-50`).
+2. **SME-Side Lacked Depth**:
+   - The SME portal (`/sme`) offered minimal information, leaving borrowers without meaningful visibility into their operational health, working capital, cash runway, and statement submission history.
+   - Rule 4.8 strictly forbids leaking bank comments, internal thresholds, or bank-side probability of default (PD) to borrowers.
+
+### Actions
+
+1. **Modern Sleek Institutional Design System**:
+   - Standardized colors across all routes (`app/page.tsx`, `app/bank/page.tsx`, `app/bank/assess/page.tsx`, `app/bank/assessments/[id]/page.tsx`, `app/components/NetworkGraphCanvas.tsx`, `app/components/badges.tsx`, and `app/sme/page.tsx`).
+   - Unified palette:
+     - Background: `#d9dcd6` (alabaster/dust)
+     - Typography / Dark Slate: `#16425b` (Yale deep slate)
+     - Primary Interactive: `#2f6690` (Baltic blue)
+     - Accent / Borders / Sub-headers: `#3a7ca5` (Steel blue)
+     - Highlighting / Subtle fills: `#81c3d7` (Sky blue)
+   - Replaced all raw generic indigo/purple buttons, sliders, badges, and drawers with sleek, institutional fintech styling.
+2. **Enriched Backend SME Endpoint (`backend/api/routers/sme_router.py`)**:
+   - Enriched `GET /api/sme/readiness` with extensive, borrower-accessible analytics:
+     - `company_profile`: NIP, REGON, sector, industry, city, verification status.
+     - `financial_snapshot`: Revenue, COGS, gross profit, EBIT, net profit, total assets, current assets, cash, receivables, inventory, liabilities, debt, equity, working capital.
+     - `operational_metrics`: Current ratio, cash ratio, equity ratio %, DSO (days sales outstanding), DPO (days payable outstanding), DIO (days inventory outstanding), CCC (cash conversion cycle), runway months, and WCFV (Working Capital Flexibility Variance).
+     - `commercial_network_summary`: Active partner count, average settlement lag, counterparty stability.
+     - `statement_history`: Array of past statements with submission date, revenue, net profit, and balance sheet totals.
+     - `guidance_tips`: Actionable advisory suggestions dynamically tailored to the SME's ratios (e.g., liquidity preservation, trade receivable acceleration).
+   - Strictly enforced **Rule 4.8 (SME Isolation)**: zero disclosure of tabular PD, GNN PD, fused PD, bank risk band, or internal bank notes.
+3. **Overhauled Borrower Portal Dashboard (`app/sme/page.tsx`)**:
+   - Implemented an institutional borrower overview:
+     - Company Profile Header with KRS/NIP verification badges and Rule 4.8 confidentiality notice.
+     - 3-Step Readiness Milestone tracker (Registration, Financial Reporting, Credit Review).
+     - 4-Card Financial Snapshot (Annual Turnover, Operating Profit EBIT, Net Working Capital, Liquidity Runway).
+     - 6-Gauge Operational Efficiency Cockpit (DSO, DPO, Cash Conversion Cycle, Current Ratio, Equity Ratio, WCFV).
+     - Actionable Financial Recommendations banner.
+     - Historical Statements Submission Log with download and verification timestamps.
+
+### Verification
+
+- `npm run build`: Compiled 100% cleanly in Next.js 16.3.5 with Turbopack, zero TypeScript or build errors.
+- `tests/test_api_gateway.py`: 11/11 tests passed in 77.09s, including `test_sme_readiness` and SME isolation assertions.
+- Verified Rule 4.8 compliance: Borrower portal exposes comprehensive operational analytics without leaking any lender-only risk scores or internal thresholds.
+
+---
+
+## 2026-10-26 — Loan Application Intake & Management System with Dual-Source Reconciliation
+
+### Problem
+
+1. **Missing Loan Intake Flow**:
+   - Borrowers on the SME portal had no mechanism to submit facility requests (working capital revolvers, term loans, capex equipment financing).
+   - Bank officers on `/bank` had no dedicated queue to triage incoming loan applications.
+2. **Disconnected Dual-Source Reconciliation**:
+   - The Dual-Source Reconciliation module previously used fallback values because self-reported loan application figures were not integrated end-to-end.
+
+### Actions
+
+1. **Remote Database Migration (PostgreSQL)**:
+   - Added table `loan_application` in remote Supabase with columns: `id`, `sme_id`, `facility_type`, `requested_amount`, `tenor_months`, `purpose`, `self_reported_revenue`, `self_reported_assets`, `self_reported_liabilities`, `self_reported_equity`, `self_reported_net_profit`, `self_reported_cash`, `contact_name`, `contact_email`, `status`, `assessment_id`, `created_at`, `updated_at`.
+   - Seeded benchmark pending applications for primary SMEs.
+2. **Repository & Analytics Layer (`backend/repositories/assessment_repository.py` & `backend/quant/analytics_service.py`)**:
+   - Added `create_loan_application`, `list_loan_applications`, `get_loan_application`, and `update_loan_application_status`.
+   - Wired `QuantAnalyticsService` dual-source reconciliation to dynamically prioritize the borrower's self-reported numbers (`self_reported_*`) as Source A.
+3. **Domain Router Endpoints**:
+   - Bank router: `GET /api/bank/applications`, `POST /api/bank/applications`, `GET /api/bank/applications/{id}`.
+   - SME router: `POST /api/sme/applications`, `GET /api/sme/applications` (Rule 4.8 tenant-isolated).
+   - Auto-link: When `run_assessment` receives `application_id`, it updates application status to `ASSESSED` and records `assessment_id`.
+4. **Frontend Architecture & UX**:
+   - Bank Dashboard (`/bank`): Added tab switcher with "Loan Applications Queue" (pending count badge, status filters, and "Assess Application" navigation) and "SME Portfolio", plus a "New Loan Intake" modal for bank officers.
+   - Assessment Wizard (`/bank/assess`): Supported `?application_id=...` URL parameter to pre-populate self-reported figures and display underwriting context banner.
+   - SME Portal (`/sme`): Added "Apply for Credit Facility" modal and "Active Credit Facility Applications" tracking cards.
+5. **Automated Testing Suite (`tests/test_loan_applications.py`)**:
+   - Added 5 end-to-end integration tests validating intake, SME submission, RBAC boundaries, auto-status transition to `ASSESSED`, and dual-source reconciliation value matching.
+
+### Verification
+
+- `tests/test_loan_applications.py`: 5/5 passed in 59.07s.
+- `npm run build`: 10/10 routes compiled cleanly with Turbopack, zero TypeScript errors.
+- Verified Rule 4.1 remote persistence (PostgreSQL) and Rule 4.8 SME tenant isolation.

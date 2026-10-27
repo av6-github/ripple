@@ -48,7 +48,7 @@ class FusionEngine:
             return RiskBand.BAND_A
         elif pd < 0.05:
             return RiskBand.BAND_B
-        elif pd < 0.12:
+        elif pd < 0.15:
             return RiskBand.BAND_C
         else:
             return RiskBand.BAND_D

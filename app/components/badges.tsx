@@ -14,7 +14,7 @@ export function RiskBandBadge({ band }: { band: RiskBand | string }) {
   } else if (norm.includes("BAND D") || norm === "HIGH" || norm === "VERY_HIGH") {
     color = "bg-rose-50 text-rose-700 border-rose-300 dark:bg-rose-950/50 dark:text-rose-300 dark:border-rose-800";
   } else if (norm.includes("INCONCLUSIVE")) {
-    color = "bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800";
+    color = "bg-[#3a7ca5]/15 text-[#16425b] border-[#3a7ca5]/40";
   }
 
   return (
@@ -41,7 +41,7 @@ export function RecommendationBadge({ rec }: { rec: Recommendation | string }) {
     color = "bg-rose-100 text-rose-800 border-rose-300 dark:bg-rose-900/60 dark:text-rose-200";
     label = "Higher Risk (Elevated Hazard)";
   } else if (norm === "INCONCLUSIVE") {
-    color = "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/60 dark:text-purple-200";
+    color = "bg-[#3a7ca5]/20 text-[#16425b] border-[#3a7ca5]/50";
     label = "Inconclusive (Data Missing)";
   }
 

@@ -8,12 +8,12 @@ services:
       - "8000:8000"
     environment:
       - PORT=8000
-      - DATABASE_URL=${DATABASE_URL}
+      - SUPABASE_DB_URL=${SUPABASE_DB_URL:-${DATABASE_URL}}
       - NEO4J_URI=${NEO4J_URI}
       - NEO4J_USERNAME=${NEO4J_USERNAME:-neo4j}
       - NEO4J_PASSWORD=${NEO4J_PASSWORD}
       - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_INDEX=${PINECONE_INDEX:-ripple-sme-embeddings}
+      - PINECONE_INDEX_NAME=${PINECONE_INDEX_NAME:-ripple-sme-embeddings}
       - JWT_SECRET=${JWT_SECRET:-ripple-dev-secret-key-32-bytes-long}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

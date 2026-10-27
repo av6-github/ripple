@@ -255,6 +255,60 @@ def test_feat_007_efficiency_and_ccc():
     assert feats["asset_turnover"] == pytest.approx(1.216667, abs=1e-5)
 
 
+def test_feat_007_wcfv_stressed_mismatch():
+    """WCFV = ((DSO - DPO) / CCC) * (Short-term debt / Equity)."""
+    period = FinancialStatementPeriod(
+        total_revenue=365_000.0,
+        cost_of_goods_sold=365_000.0,
+        accounts_receivable=90_000.0,  # DSO = 90 days
+        accounts_payable=30_000.0,     # DPO = 30 days
+        inventory=40_000.0,            # DIO = 40 days -> CCC = 100 days
+        short_term_liabilities=200_000.0,
+        total_equity=100_000.0,        # Leverage = 2.0
+    )
+    feats = compute_efficiency_ratios(period)
+    assert feats["dso"] == 90.0
+    assert feats["dpo"] == 30.0
+    assert feats["cash_conversion_cycle"] == 100.0
+    # Gap intensity = (90 - 30) / 100 = 0.60
+    # Leverage = 200,000 / 100,000 = 2.0
+    # WCFV = 0.60 * 2.0 = 1.20
+    assert feats["working_capital_fragility_velocity"] == 1.20
+
+
+def test_feat_007_wcfv_negative_equity_distress():
+    """Negative equity triggers severe 10.0 leverage penalty."""
+    period = FinancialStatementPeriod(
+        total_revenue=365_000.0,
+        cost_of_goods_sold=365_000.0,
+        accounts_receivable=90_000.0,
+        accounts_payable=30_000.0,
+        inventory=40_000.0,
+        short_term_liabilities=100_000.0,
+        total_equity=-50_000.0,
+    )
+    feats = compute_efficiency_ratios(period)
+    # Gap intensity = 0.60 * 10.0 penalty = 6.0
+    assert feats["working_capital_fragility_velocity"] == 6.0
+
+
+def test_feat_007_wcfv_optimal_surplus():
+    """Receivables collected faster than payables yields negative WCFV (cushion)."""
+    period = FinancialStatementPeriod(
+        total_revenue=365_000.0,
+        cost_of_goods_sold=365_000.0,
+        accounts_receivable=20_000.0,  # DSO = 20
+        accounts_payable=50_000.0,     # DPO = 50 -> Gap = -30
+        inventory=60_000.0,            # DIO = 60 -> CCC = 30
+        short_term_liabilities=50_000.0,
+        total_equity=100_000.0,        # Leverage = 0.5
+    )
+    feats = compute_efficiency_ratios(period)
+    # Gap intensity = (20 - 50) / 30 = -1.0
+    # Leverage = 0.5 -> WCFV = -0.5
+    assert feats["working_capital_fragility_velocity"] == -0.5
+
+
 # =====================================================================
 # FEAT-008 & FEAT-009: Alternative Data (Concentration & Payments)
 # =====================================================================

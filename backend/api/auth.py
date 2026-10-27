@@ -7,9 +7,12 @@ Implements:
 """
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+import secrets
+from typing import List, Optional
 from dotenv import load_dotenv
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -17,13 +20,52 @@ import jwt
 from pydantic import BaseModel
 from backend.domain.enums import AppRole
 
+logger = logging.getLogger("ripple-auth")
 load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
-JWT_SECRET = os.getenv("JWT_SECRET", "ripple-academic-prototype-secure-jwt-secret-key-2026")
+_raw_jwt_secret = os.getenv("JWT_SECRET")
+_env_mode = os.getenv("ENVIRONMENT", os.getenv("NODE_ENV", "development")).lower()
+
+if _env_mode in ("production", "staging") and not _raw_jwt_secret:
+    raise RuntimeError("CRITICAL SECURITY VIOLATION: JWT_SECRET environment variable must be explicitly configured in production/staging.")
+
+if not _raw_jwt_secret:
+    logger.warning("INSECURE JWT CONFIG: Using default academic prototype fallback JWT secret. Set JWT_SECRET in .env for production.")
+
+JWT_SECRET = _raw_jwt_secret or "ripple-academic-prototype-secure-jwt-secret-key-2026"
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
 security_bearer = HTTPBearer(auto_error=False)
+
+
+def hash_password(plain_password: str) -> str:
+    """Hash password using PBKDF2-HMAC-SHA256 with 100,000 iterations and salt."""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac(
+        "sha256",
+        plain_password.encode("utf-8"),
+        salt.encode("utf-8"),
+        100_000,
+    )
+    return f"{salt}${key.hex()}"
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against stored salt and PBKDF2-HMAC-SHA256 hash using constant-time comparison."""
+    if not hashed_password or "$" not in hashed_password:
+        return False
+    try:
+        salt, expected_hex = hashed_password.split("$", 1)
+        key = hashlib.pbkdf2_hmac(
+            "sha256",
+            plain_password.encode("utf-8"),
+            salt.encode("utf-8"),
+            100_000,
+        )
+        return secrets.compare_digest(key.hex(), expected_hex)
+    except Exception:
+        return False
 
 
 class UserClaims(BaseModel):

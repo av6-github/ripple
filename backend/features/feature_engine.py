@@ -100,6 +100,7 @@ class FeatureEngine:
         "dio",
         "cash_conversion_cycle",
         "asset_turnover",
+        "working_capital_fragility_velocity",
         # Trend / Growth
         "yoy_sales_growth",
         "revenue_volatility",
@@ -283,6 +284,27 @@ class FeatureEngine:
             features["cash_conversion_cycle"] = None
         features["asset_turnover"] = get_val("Attr9")
 
+        # Working Capital Fragility Velocity
+        x51 = get_val("Attr51")
+        x10 = get_val("Attr10")
+        dso_val = features["dso"]
+        dpo_val = features["dpo"]
+        ccc_val = features["cash_conversion_cycle"]
+        if dso_val is not None and dpo_val is not None and ccc_val is not None:
+            gap = dso_val - dpo_val
+            norm_ccc = max(abs(ccc_val), 1.0)
+            gap_int = gap / norm_ccc
+            if x51 is not None and x10 is not None:
+                if x10 <= 0:
+                    lev = 10.0 if x51 > 0 else 1.0
+                else:
+                    lev = max(0.0, min(20.0, x51 / x10))
+                features["working_capital_fragility_velocity"] = round(float(gap_int * lev), 4)
+            else:
+                features["working_capital_fragility_velocity"] = round(float(gap_int), 4)
+        else:
+            features["working_capital_fragility_velocity"] = None
+
         # Growth / Trend
         features["yoy_sales_growth"] = get_val("Attr21")
         features["revenue_volatility"] = None
@@ -458,5 +480,18 @@ class FeatureEngine:
             else:
                 status, desc = "HIGH", "High dependency on top customer accounts."
             indicators["customer_concentration"] = {"value": cc, "status": status, "interpretation": desc}
+
+        # Working Capital Fragility Velocity
+        wcfv = features.get("working_capital_fragility_velocity")
+        if wcfv is not None:
+            if wcfv <= 0.0:
+                status, desc = "OPTIMAL", "Receivables collected faster than payables; negative working capital funding burden."
+            elif wcfv <= 0.75:
+                status, desc = "MANAGEABLE", "Mild working capital mismatch comfortably buffered by equity."
+            elif wcfv <= 2.0:
+                status, desc = "ELEVATED", "Trade credit gap is expanding and funded primarily by short-term obligations."
+            else:
+                status, desc = "ACUTE_FRAGILITY", "Severe liquidity drain velocity; high risk of cash crunch under supply shock."
+            indicators["working_capital_fragility_velocity"] = {"value": wcfv, "status": status, "interpretation": desc}
 
         return indicators

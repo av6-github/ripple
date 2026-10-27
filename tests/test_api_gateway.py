@@ -99,29 +99,35 @@ def test_sme_readiness_redacts_lender_information():
     )
     sme_id = test_sme["id"]
 
-    sme_token = create_access_token(
-        user_id=str(uuid.uuid4()),
-        email="owner@sme.pl",
-        role=AppRole.SME_USER,
-        sme_id=sme_id,
-    )
+    try:
+        sme_token = create_access_token(
+            user_id=str(uuid.uuid4()),
+            email="owner@sme.pl",
+            role=AppRole.SME_USER,
+            sme_id=sme_id,
+        )
 
-    res = client.get("/api/sme/readiness", headers={"Authorization": f"Bearer {sme_token}"})
-    assert res.status_code == 200
-    data = res.json()
+        res = client.get("/api/sme/readiness", headers={"Authorization": f"Bearer {sme_token}"})
+        assert res.status_code == 200
+        data = res.json()
 
-    # Verify required SME guidance is present
-    assert data["sme_id"] == sme_id
-    assert "guidance_tips" in data
-    assert "disclaimer" in data
+        # Verify required SME guidance is present
+        assert data["sme_id"] == sme_id
+        assert "guidance_tips" in data
+        assert "disclaimer" in data
 
-    # STRICT RULE 4.8 ASSERTIONS: Ensure internal lender fields are completely absent
-    assert "tabular_pd" not in data
-    assert "graph_pd" not in data
-    assert "fused_pd" not in data
-    assert "bank_comments" not in data
-    assert "internal_thresholds" not in data
-    assert "shap_values" not in data
+        # STRICT RULE 4.8 ASSERTIONS: Ensure internal lender fields are completely absent
+        assert "tabular_pd" not in data
+        assert "graph_pd" not in data
+        assert "fused_pd" not in data
+        assert "bank_comments" not in data
+        assert "internal_thresholds" not in data
+        assert "shap_values" not in data
+    finally:
+        try:
+            repo.delete_sme(sme_id)
+        except Exception:
+            pass
 
 
 # =====================================================================
@@ -138,82 +144,88 @@ def test_run_bank_assessment_and_decision_lifecycle():
     )
     sme_id = test_sme["id"]
 
-    bank_token = create_access_token(
-        user_id=str(uuid.uuid4()),
-        email="credit_risk@bank.pl",
-        role=AppRole.BANK_OFFICER,
-    )
+    try:
+        bank_token = create_access_token(
+            user_id=str(uuid.uuid4()),
+            email="credit_risk@bank.pl",
+            role=AppRole.BANK_OFFICER,
+        )
 
-    # 1. Run assessment
-    payload = {
-        "sme_id": sme_id,
-        "statements": [
-            {
-                "fiscal_year": 2023,
-                "total_assets": 500_000.0,
-                "current_assets": 200_000.0,
-                "cash_and_equivalents": 50_000.0,
-                "inventory": 30_000.0,
-                "total_liabilities": 200_000.0,
-                "short_term_liabilities": 120_000.0,
-                "total_equity": 300_000.0,
-                "total_revenue": 600_000.0,
-                "cost_of_goods_sold": 350_000.0,
-                "gross_profit": 250_000.0,
-                "operating_profit_ebit": 90_000.0,
-                "net_profit": 60_000.0,
-                "operating_cash_flow": 80_000.0,
-                "interest_expense": 15_000.0,
-            }
-        ],
-        "network_neighbors": ["BIZ_COUNTERPARTY_1", "BIZ_COUNTERPARTY_2"],
-        "network_edges": [[0, 1], [1, 0]],
-    }
+        # 1. Run assessment
+        payload = {
+            "sme_id": sme_id,
+            "statements": [
+                {
+                    "fiscal_year": 2023,
+                    "total_assets": 500_000.0,
+                    "current_assets": 200_000.0,
+                    "cash_and_equivalents": 50_000.0,
+                    "inventory": 30_000.0,
+                    "total_liabilities": 200_000.0,
+                    "short_term_liabilities": 120_000.0,
+                    "total_equity": 300_000.0,
+                    "total_revenue": 600_000.0,
+                    "cost_of_goods_sold": 350_000.0,
+                    "gross_profit": 250_000.0,
+                    "operating_profit_ebit": 90_000.0,
+                    "net_profit": 60_000.0,
+                    "operating_cash_flow": 80_000.0,
+                    "interest_expense": 15_000.0,
+                }
+            ],
+            "network_neighbors": ["BIZ_COUNTERPARTY_1", "BIZ_COUNTERPARTY_2"],
+            "network_edges": [[0, 1], [1, 0]],
+        }
 
-    run_res = client.post(
-        "/api/bank/assessments/run",
-        json=payload,
-        headers={"Authorization": f"Bearer {bank_token}"},
-    )
-    assert run_res.status_code == 201
-    assessment_data = run_res.json()
+        run_res = client.post(
+            "/api/bank/assessments/run",
+            json=payload,
+            headers={"Authorization": f"Bearer {bank_token}"},
+        )
+        assert run_res.status_code == 201
+        assessment_data = run_res.json()
 
-    assert "assessment_id" in assessment_data
-    assert assessment_data["sme_id"] == sme_id
-    assert 0.0 <= assessment_data["fused_pd"] <= 1.0
-    assert assessment_data["recommendation"] in ["LOWER_RISK", "FURTHER_REVIEW", "HIGHER_RISK", "INCONCLUSIVE"]
-    assert "DECISION CUSTODY" in assessment_data["decision_custody_notice"]
-    assert len(assessment_data["scenario_stress_tests"]) == 4
+        assert "assessment_id" in assessment_data
+        assert assessment_data["sme_id"] == sme_id
+        assert 0.0 <= assessment_data["fused_pd"] <= 1.0
+        assert assessment_data["recommendation"] in ["LOWER_RISK", "FURTHER_REVIEW", "HIGHER_RISK", "INCONCLUSIVE"]
+        assert "DECISION CUSTODY" in assessment_data["decision_custody_notice"]
+        assert len(assessment_data["scenario_stress_tests"]) == 4
 
-    assessment_id = assessment_data["assessment_id"]
+        assessment_id = assessment_data["assessment_id"]
 
-    # 2. Retrieve snapshot
-    snap_res = client.get(
-        f"/api/bank/assessments/{assessment_id}",
-        headers={"Authorization": f"Bearer {bank_token}"},
-    )
-    assert snap_res.status_code == 200
-    snap_data = snap_res.json()
-    assert snap_data["assessment"]["id"] == assessment_id
+        # 2. Retrieve snapshot
+        snap_res = client.get(
+            f"/api/bank/assessments/{assessment_id}",
+            headers={"Authorization": f"Bearer {bank_token}"},
+        )
+        assert snap_res.status_code == 200
+        snap_data = snap_res.json()
+        assert snap_data["assessment"]["id"] == assessment_id
 
-    # 3. Record Officer Decision / Override (Rule 4.6)
-    decision_payload = {
-        "decision": "OVERRIDE_APPROVE",
-        "is_override": True,
-        "override_reason": "Strong personal collateral and long-standing operating history mitigates moderate leverage.",
-        "comments": "Credit committee approved with quarterly liquidity covenant monitoring.",
-    }
+        # 3. Record Officer Decision / Override (Rule 4.6)
+        decision_payload = {
+            "decision": "OVERRIDE_APPROVE",
+            "is_override": True,
+            "override_reason": "Strong personal collateral and long-standing operating history mitigates moderate leverage.",
+            "comments": "Credit committee approved with quarterly liquidity covenant monitoring.",
+        }
 
-    dec_res = client.post(
-        f"/api/bank/assessments/{assessment_id}/decision",
-        json=decision_payload,
-        headers={"Authorization": f"Bearer {bank_token}"},
-    )
-    assert dec_res.status_code == 201
-    decision_data = dec_res.json()
-    assert decision_data["status"] == "DECISION_RECORDED"
-    assert decision_data["decision"]["is_override"] is True
-    assert decision_data["decision"]["decision"] == "OVERRIDE_APPROVE"
+        dec_res = client.post(
+            f"/api/bank/assessments/{assessment_id}/decision",
+            json=decision_payload,
+            headers={"Authorization": f"Bearer {bank_token}"},
+        )
+        assert dec_res.status_code == 201
+        decision_data = dec_res.json()
+        assert decision_data["status"] == "DECISION_RECORDED"
+        assert decision_data["decision"]["is_override"] is True
+        assert decision_data["decision"]["decision"] == "OVERRIDE_APPROVE"
+    finally:
+        try:
+            repo.delete_sme(sme_id)
+        except Exception:
+            pass
 
 
 # =====================================================================
@@ -247,4 +259,116 @@ def test_get_demo_tokens():
     bank_tok = data["bank_officer"]["token"]
     sme_res = client.get("/api/bank/smes", headers={"Authorization": f"Bearer {bank_tok}"})
     assert sme_res.status_code == 200
+
+
+def test_assessment_quant_analytics_endpoint(monkeypatch):
+    """Verify quant-analytics endpoint returns PIT, reconciliation, and backtest results."""
+    bank_token = create_access_token("bank-test-officer", "officer@bank.pl", AppRole.BANK_OFFICER)
+
+    # Mock assessment snapshot and SME in repository for isolated unit testing
+    mock_snapshot = {
+        "id": "mock-assessment-123",
+        "sme_id": "mock-sme-123",
+        "tabular_pd": 0.035,
+        "graph_pd": 0.02,
+        "fused_pd": 0.032,
+        "risk_band": "Band B",
+        "recommendation": "FURTHER_REVIEW",
+        "created_at": "2024-03-15T12:00:00Z",
+        "explanation_summary": {
+            "top_risk_drivers": [
+                {"label": "Current Ratio", "feature": "current_ratio", "value": 1.2, "shap": 0.15}
+            ]
+        },
+    }
+    mock_sme = {
+        "id": "mock-sme-123",
+        "legal_name": "Test Quant SME S.A.",
+        "sector": "manufacturing",
+        "industry": "Industrial Machinery",
+    }
+
+    monkeypatch.setattr(
+        AssessmentRepository,
+        "get_assessment_snapshot",
+        lambda self, aid: mock_snapshot if aid == "mock-assessment-123" else None,
+    )
+    monkeypatch.setattr(
+        AssessmentRepository,
+        "get_sme_by_id",
+        lambda self, sid: mock_sme if sid == "mock-sme-123" else None,
+    )
+
+    # Query quant analytics endpoint
+    res = client.get(
+        "/api/bank/assessments/mock-assessment-123/quant-analytics",
+        headers={"Authorization": f"Bearer {bank_token}"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+
+    assert "point_in_time_audit" in data
+    assert data["point_in_time_audit"]["is_point_in_time_compliant"] is True
+    assert "data_reconciliation" in data
+    assert "cross_sectional_signals" in data
+    assert len(data["cross_sectional_signals"]["signals"]) >= 3
+    assert "data_quality_gate" in data
+    assert "provenance_manifest" in data
+
+
+def test_simulate_custom_stress_scenario(monkeypatch):
+    """Verify custom counterfactual macroeconomic stress testing simulation."""
+    bank_token = create_access_token("bank-test-officer", "officer@bank.pl", AppRole.BANK_OFFICER)
+
+    mock_snapshot = {
+        "id": "mock-assessment-custom",
+        "sme_id": "mock-sme-custom",
+        "tabular_pd": 0.045,
+        "explanation_summary": {
+            "financial_statement": {
+                "fiscal_year": 2023,
+                "total_assets": 1000000.0,
+                "current_assets": 500000.0,
+                "cash_and_equivalents": 100000.0,
+                "inventory": 80000.0,
+                "accounts_receivable": 200000.0,
+                "total_liabilities": 400000.0,
+                "short_term_liabilities": 250000.0,
+                "total_equity": 600000.0,
+                "total_revenue": 1500000.0,
+                "cost_of_goods_sold": 900000.0,
+                "gross_profit": 600000.0,
+                "operating_profit_ebit": 150000.0,
+                "net_profit": 95000.0,
+                "operating_cash_flow": 120000.0,
+                "interest_expense": 20000.0,
+            }
+        },
+    }
+
+    monkeypatch.setattr(
+        AssessmentRepository,
+        "get_assessment_snapshot",
+        lambda self, aid: mock_snapshot if aid == "mock-assessment-custom" else None,
+    )
+
+    payload = {
+        "revenue_drop_pct": 0.25,
+        "rate_hike_bps": 350,
+        "dso_increase_days": 45,
+        "cost_inflation_pct": 0.18,
+    }
+
+    res = client.post(
+        "/api/bank/assessments/mock-assessment-custom/simulate-scenario",
+        json=payload,
+        headers={"Authorization": f"Bearer {bank_token}"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["scenario_id"] == "SCEN-CUSTOM"
+    assert "shocked_pd" in data
+    assert "delta_pd" in data
+    assert "percentage_change" in data
+    assert data["shocked_features_summary"]["revenue_shock_pct"] == 25.0
 

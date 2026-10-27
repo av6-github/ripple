@@ -139,7 +139,12 @@ def test_gnn_connected_node_assessment():
 
 def test_neo4j_remote_roundtrip_synthetic_enforcement():
     """Verify persistence in remote Neo4j AuraDB strictly enforces is_synthetic: true."""
-    client = Neo4jGraphClient()
+    try:
+        client = Neo4jGraphClient()
+        client.verify_connectivity()
+    except Exception as exc:
+        pytest.skip(f"Neo4j AuraDB instance is unavailable or paused ({exc})")
+
     test_u = "TEST_GNN_BIZ_A"
     test_v = "TEST_GNN_BIZ_B"
 

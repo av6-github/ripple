@@ -9,6 +9,7 @@ import {
   RecommendationBadge,
   RiskBandBadge,
 } from "@/app/components/badges";
+import { RoleGuard } from "@/app/components/RoleGuard";
 import { ArrowLeft, Printer } from "lucide-react";
 
 export default function AssessmentReportPage() {
@@ -46,12 +47,14 @@ export default function AssessmentReportPage() {
     );
   }
 
-  const explSnap = snapshot.explanation_snapshot || {};
+  const explSnap =
+    snapshot.explanation_summary || snapshot.explanation_snapshot || {};
   const riskDrivers = explSnap.top_risk_drivers || [];
   const mitigatingFactors = explSnap.top_mitigating_factors || [];
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10 space-y-8 bg-white text-zinc-900 min-h-screen">
+    <RoleGuard allowedRoles={["bank_officer", "admin"]}>
+      <div className="mx-auto max-w-4xl px-6 py-10 space-y-8 bg-white text-zinc-900 min-h-screen">
       {/* Non-print controls */}
       <div className="print:hidden flex items-center justify-between pb-4 border-b border-zinc-200">
         <Link
@@ -62,7 +65,7 @@ export default function AssessmentReportPage() {
         </Link>
         <button
           onClick={() => window.print()}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-indigo-600 text-white font-bold text-xs shadow-sm hover:bg-indigo-700 transition"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#2f6690] text-white font-bold text-xs shadow-sm hover:bg-[#16425b] transition"
         >
           <Printer className="w-4 h-4" /> Print / Save as PDF
         </button>
@@ -71,7 +74,7 @@ export default function AssessmentReportPage() {
       {/* Memorandum Header */}
       <div className="border-b-2 border-zinc-900 pb-6 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold uppercase tracking-widest text-indigo-700">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#2f6690]">
             RIPPLE Academic Decision Support Platform
           </span>
           <span className="text-xs font-mono text-zinc-500">
@@ -85,7 +88,7 @@ export default function AssessmentReportPage() {
           <div>Assessment Snapshot ID: {snapshot.id}</div>
           <div>Evaluation Timestamp: {new Date(snapshot.created_at).toLocaleString()}</div>
           <div>Borrower SME ID: {snapshot.sme_id}</div>
-          <div>Model Bundle: v1.0.0 (XGBoost Calibrated + GCN)</div>
+          <div>Model Bundle: {snapshot?.model_version || "v1.0.0 (XGBoost Calibrated + GCN)"}</div>
         </div>
       </div>
 
@@ -181,6 +184,7 @@ export default function AssessmentReportPage() {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </RoleGuard>
   );
 }
