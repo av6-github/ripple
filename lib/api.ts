@@ -60,9 +60,27 @@ class ApiClient {
     }
 
     try {
-      return await fetch(finalUrl, init);
+      const res = await fetch(finalUrl, init);
+      // Check if Next.js proxy itself returned 500/502/503/504 with a proxy error (socket hang up / ECONNRESET)
+      if (
+        !res.ok &&
+        (res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) &&
+        typeof window !== "undefined"
+      ) {
+        const text = await res.clone().text().catch(() => "");
+        if (
+          text.includes("Failed to proxy") ||
+          text.includes("ECONNRESET") ||
+          text.includes("socket hang up") ||
+          res.status === 502 ||
+          res.status === 504
+        ) {
+          throw new Error(`Next.js proxy error: ${res.status}`);
+        }
+      }
+      return res;
     } catch (err: unknown) {
-      // If primary fetch failed with a NetworkError in the browser, fallback to direct loopback
+      // If primary fetch failed with a NetworkError or Next.js proxy hung up, fallback to direct loopback
       if (typeof window !== "undefined") {
         const path = finalUrl.startsWith("http")
           ? new URL(finalUrl).pathname + new URL(finalUrl).search
@@ -72,7 +90,10 @@ class ApiClient {
           const candidateUrl = `${host}${path.startsWith("/") ? path : `/${path}`}`;
           if (candidateUrl !== finalUrl) {
             try {
-              return await fetch(candidateUrl, init);
+              const fbRes = await fetch(candidateUrl, init);
+              if (fbRes.ok || fbRes.status < 500) {
+                return fbRes;
+              }
             } catch {
               // try next candidate
             }
@@ -262,8 +283,15 @@ class ApiClient {
       body: JSON.stringify(params),
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: "Assessment error" }));
-      throw new Error(err.detail || `Assessment failed with status ${res.status}`);
+      const text = await res.text().catch(() => "");
+      let detail = "";
+      try {
+        const json = JSON.parse(text);
+        detail = json.detail || json.message;
+      } catch {
+        detail = text.slice(0, 300);
+      }
+      throw new Error(detail || `Assessment failed with status ${res.status}`);
     }
     return res.json();
   }

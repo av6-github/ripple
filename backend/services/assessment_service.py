@@ -147,8 +147,11 @@ class AssessmentService:
             num_nodes = len(network_neighbors) + 1
             subgraph_features = np.zeros((num_nodes, X_proc.shape[1]), dtype=np.float32)
             subgraph_features[0] = X_proc[0]
+
+            # Batch collect counterparty tax IDs for a single query
+            tax_id_map: Dict[int, str] = {}
+            tax_ids_to_fetch: List[str] = []
             for idx, neighbor in enumerate(network_neighbors):
-                # Check if counterparty has real statements in PostgreSQL
                 c_tax_id = None
                 if isinstance(neighbor, str) and "[ID:" in neighbor:
                     try:
@@ -157,17 +160,27 @@ class AssessmentService:
                         pass
                 elif isinstance(neighbor, dict):
                     c_tax_id = neighbor.get("id")
-
-                found_real = False
                 if c_tax_id:
-                    c_sme = self.repo.get_sme_by_tax_id(c_tax_id)
-                    if c_sme:
-                        c_stmts = self.repo.list_statements_for_sme(c_sme["id"]) if hasattr(self.repo, "list_statements_for_sme") else []
-                        if c_stmts:
-                            c_feat = self.feature_engine.extract_from_statements(c_stmts).features
-                            c_x = self.ml.preprocessor.transform(pd.DataFrame([c_feat]))
-                            subgraph_features[idx + 1] = c_x[0]
-                            found_real = True
+                    tax_id_map[idx] = c_tax_id
+                    tax_ids_to_fetch.append(c_tax_id)
+
+            found_smes = (
+                self.repo.get_smes_by_tax_ids(tax_ids_to_fetch)
+                if tax_ids_to_fetch and hasattr(self.repo, "get_smes_by_tax_ids")
+                else {}
+            )
+
+            for idx, neighbor in enumerate(network_neighbors):
+                c_tax_id = tax_id_map.get(idx)
+                found_real = False
+                if c_tax_id and c_tax_id in found_smes:
+                    c_sme = found_smes[c_tax_id]
+                    c_stmts = self.repo.list_statements_for_sme(c_sme["id"]) if hasattr(self.repo, "list_statements_for_sme") else []
+                    if c_stmts:
+                        c_feat = self.feature_engine.extract_from_statements(c_stmts).features
+                        c_x = self.ml.preprocessor.transform(pd.DataFrame([c_feat]))
+                        subgraph_features[idx + 1] = c_x[0]
+                        found_real = True
 
                 if not found_real:
                     # Deterministic counterparty variance seeded by neighbor ID hash
@@ -214,14 +227,26 @@ class AssessmentService:
                 role_lower = role.lower()
                 nid_lower = nid.lower()
                 if (
-                    "supplier" in role_lower
+                    "incoming" in role_lower
+                    or "supplier" in role_lower
                     or "vendor" in role_lower
                     or "provider" in role_lower
                     or "upstream" in role_lower
                     or "lessor" in role_lower
+                    or "supplies" in role_lower
                     or "sup-" in nid_lower
                 ):
                     direction = "incoming"
+                elif (
+                    "outgoing" in role_lower
+                    or "buyer" in role_lower
+                    or "client" in role_lower
+                    or "customer" in role_lower
+                    or "downstream" in role_lower
+                    or "sells" in role_lower
+                    or "byr-" in nid_lower
+                ):
+                    direction = "outgoing"
                 elif (
                     "partner" in role_lower
                     or "hub" in role_lower

@@ -34,7 +34,13 @@ class Neo4jGraphClient:
         if not self.uri or not self.password:
             raise ValueError("NEO4J_URI and NEO4J_PASSWORD must be configured in environment.")
 
-        self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+        self.driver = GraphDatabase.driver(
+            self.uri,
+            auth=(self.user, self.password),
+            connection_timeout=3.0,
+            connection_acquisition_timeout=3.0,
+            max_connection_lifetime=60,
+        )
 
     def close(self) -> None:
         """Close driver connection pool."""

@@ -56,14 +56,27 @@ export function NetworkGraphCanvas({
     const idLower = (n.id || "").toLowerCase();
     if (
       dirLower === "incoming" ||
+      roleLower.includes("incoming") ||
       roleLower.includes("supplier") ||
       roleLower.includes("vendor") ||
       roleLower.includes("provider") ||
       roleLower.includes("upstream") ||
       roleLower.includes("lessor") ||
+      roleLower.includes("supplies") ||
       idLower.startsWith("sup-")
     ) {
       suppliers.push(n);
+    } else if (
+      dirLower === "outgoing" ||
+      roleLower.includes("outgoing") ||
+      roleLower.includes("buyer") ||
+      roleLower.includes("client") ||
+      roleLower.includes("customer") ||
+      roleLower.includes("downstream") ||
+      roleLower.includes("sells") ||
+      idLower.startsWith("byr-")
+    ) {
+      buyers.push(n);
     } else if (
       dirLower === "bidirectional" ||
       roleLower.includes("partner") ||
@@ -144,10 +157,30 @@ export function NetworkGraphCanvas({
   }
 
   const nodes: GraphNodeCoord[] = [];
+  const supplierNodes: GraphNodeCoord[] = [];
+  const buyerNodes: GraphNodeCoord[] = [];
+  const partnerNodes: GraphNodeCoord[] = [];
+
+  const usedNodeIds = new Set<string>();
+  const makeUniqueNodeId = (rawId: string | undefined, prefix: string, index: number): string => {
+    const base = rawId && rawId.trim() ? rawId.trim() : `${prefix}-${index}`;
+    if (!usedNodeIds.has(base)) {
+      usedNodeIds.add(base);
+      return base;
+    }
+    let candidate = `${base}-${prefix}-${index}`;
+    let counter = 1;
+    while (usedNodeIds.has(candidate)) {
+      candidate = `${base}-${prefix}-${index}-${counter++}`;
+    }
+    usedNodeIds.add(candidate);
+    return candidate;
+  };
 
   // 1. Center Target SME Node
+  const coreNodeId = makeUniqueNodeId("core-sme", "core", 0);
   nodes.push({
-    id: "core-sme",
+    id: coreNodeId,
     label: smeName.split("[")[0].trim() || "Target SME Borrower",
     sublabel: smeId.slice(0, 14),
     category: "sme",
@@ -163,15 +196,28 @@ export function NetworkGraphCanvas({
 
   // 2. Position counterparties based on layoutMode
   if (layoutMode === "bipartite") {
+    // If counterparties are all partners or suppliers/buyers are completely empty, balance them into the bipartite columns
+    let effectiveSuppliers = [...suppliers];
+    let effectiveBuyers = [...buyers];
+    let effectivePartners = [...partners];
+
+    if (effectiveSuppliers.length === 0 && effectiveBuyers.length === 0 && effectivePartners.length > 0) {
+      const mid = Math.ceil(effectivePartners.length / 2);
+      effectiveSuppliers = effectivePartners.slice(0, mid);
+      effectiveBuyers = effectivePartners.slice(mid);
+      effectivePartners = [];
+    }
+
     // Upstream Suppliers on the left arc
-    suppliers.forEach((s, idx) => {
-      const total = suppliers.length;
+    effectiveSuppliers.forEach((s, idx) => {
+      const total = effectiveSuppliers.length;
       const yStep = height / (total + 1);
       const y = yStep * (idx + 1);
-      nodes.push({
-        id: s.id || `sup-${idx}`,
+      const uniqueId = makeUniqueNodeId(s.id, "sup", idx);
+      const nodeObj: GraphNodeCoord = {
+        id: uniqueId,
         label: s.name.split("[")[0].trim(),
-        sublabel: s.id || `SUP-0${idx + 1}`,
+        sublabel: s.id && s.id !== s.name ? s.id : `SUP-0${idx + 1}`,
         category: "supplier",
         x: 140,
         y: y,
@@ -183,18 +229,21 @@ export function NetworkGraphCanvas({
         direction: "incoming",
         role: s.role || "Tier-1 Upstream Supplier",
         riskTier: s.risk_level || "Low Risk",
-      });
+      };
+      nodes.push(nodeObj);
+      supplierNodes.push(nodeObj);
     });
 
     // Downstream Buyers on the right arc
-    buyers.forEach((b, idx) => {
-      const total = buyers.length;
+    effectiveBuyers.forEach((b, idx) => {
+      const total = effectiveBuyers.length;
       const yStep = height / (total + 1);
       const y = yStep * (idx + 1);
-      nodes.push({
-        id: b.id || `byr-${idx}`,
+      const uniqueId = makeUniqueNodeId(b.id, "byr", idx);
+      const nodeObj: GraphNodeCoord = {
+        id: uniqueId,
         label: b.name.split("[")[0].trim(),
-        sublabel: b.id || `BYR-0${idx + 1}`,
+        sublabel: b.id && b.id !== b.name ? b.id : `BYR-0${idx + 1}`,
         category: "buyer",
         x: width - 140,
         y: y,
@@ -206,18 +255,28 @@ export function NetworkGraphCanvas({
         direction: "outgoing",
         role: b.role || "Downstream Enterprise Client",
         riskTier: b.risk_level || "Low Risk",
-      });
+      };
+      nodes.push(nodeObj);
+      buyerNodes.push(nodeObj);
     });
 
-    // Strategic Partners at Top Center
-    partners.forEach((p, idx) => {
-      nodes.push({
-        id: p.id || `prt-${idx}`,
+    // Strategic Partners at Top Center (spread dynamically so no two nodes ever overlap!)
+    const totalP = effectivePartners.length;
+    const pSpacing = Math.min(130, (width - 240) / Math.max(1, totalP + 1));
+    const startX = centerX - ((totalP - 1) * pSpacing) / 2;
+
+    effectivePartners.forEach((p, idx) => {
+      const uniqueId = makeUniqueNodeId(p.id, "prt", idx);
+      const x = totalP === 1 ? centerX : startX + idx * pSpacing;
+      const arcOffset = totalP > 1 ? Math.sin((idx / (totalP - 1)) * Math.PI) * 20 : 0;
+      const y = 65 - arcOffset;
+      const nodeObj: GraphNodeCoord = {
+        id: uniqueId,
         label: p.name.split("[")[0].trim(),
-        sublabel: p.id || `PRT-0${idx + 1}`,
+        sublabel: p.id && p.id !== p.name ? p.id : `PRT-0${idx + 1}`,
         category: "partner",
-        x: centerX + (idx === 0 ? 0 : idx % 2 === 0 ? 90 : -90),
-        y: 65,
+        x,
+        y,
         radius: 22,
         color: "#f59e0b",
         glowColor: "rgba(245, 158, 11, 0.35)",
@@ -226,7 +285,9 @@ export function NetworkGraphCanvas({
         direction: "bidirectional",
         role: p.role || "Strategic Distribution Partner",
         riskTier: p.risk_level || "Low Risk",
-      });
+      };
+      nodes.push(nodeObj);
+      partnerNodes.push(nodeObj);
     });
   } else {
     // Radial Orbital Layout around SME core
@@ -243,20 +304,47 @@ export function NetworkGraphCanvas({
       let col = "#10b981";
       let glow = "rgba(16, 185, 129, 0.35)";
 
-      if (dirLower === "incoming" || roleLower.includes("supplier") || roleLower.includes("vendor")) {
+      if (
+        dirLower === "incoming" ||
+        roleLower.includes("incoming") ||
+        roleLower.includes("supplier") ||
+        roleLower.includes("vendor") ||
+        roleLower.includes("provider") ||
+        roleLower.includes("upstream") ||
+        roleLower.includes("lessor") ||
+        roleLower.includes("supplies")
+      ) {
         cat = "supplier";
         col = "#06b6d4";
         glow = "rgba(6, 182, 212, 0.35)";
-      } else if (dirLower === "bidirectional" || roleLower.includes("partner") || roleLower.includes("hub") || roleLower.includes("lab")) {
+      } else if (
+        dirLower === "outgoing" ||
+        roleLower.includes("outgoing") ||
+        roleLower.includes("buyer") ||
+        roleLower.includes("client") ||
+        roleLower.includes("customer") ||
+        roleLower.includes("downstream") ||
+        roleLower.includes("sells")
+      ) {
+        cat = "buyer";
+        col = "#10b981";
+        glow = "rgba(16, 185, 129, 0.35)";
+      } else if (
+        dirLower === "bidirectional" ||
+        roleLower.includes("partner") ||
+        roleLower.includes("hub") ||
+        roleLower.includes("lab")
+      ) {
         cat = "partner";
         col = "#f59e0b";
         glow = "rgba(245, 158, 11, 0.35)";
       }
 
-      nodes.push({
-        id: n.id || `node-${idx}`,
+      const uniqueId = makeUniqueNodeId(n.id, cat, idx);
+      const nodeObj: GraphNodeCoord = {
+        id: uniqueId,
         label: n.name.split("[")[0].trim(),
-        sublabel: n.id || `ID-0${idx + 1}`,
+        sublabel: n.id && n.id !== n.name ? n.id : `${cat.toUpperCase().slice(0, 3)}-0${idx + 1}`,
         category: cat,
         x,
         y,
@@ -268,11 +356,14 @@ export function NetworkGraphCanvas({
         direction: n.direction || "outgoing",
         role: n.role || "Commercial Counterparty",
         riskTier: n.risk_level || "Low Risk",
-      });
+      };
+      nodes.push(nodeObj);
+      if (cat === "supplier") supplierNodes.push(nodeObj);
+      else if (cat === "buyer") buyerNodes.push(nodeObj);
+      else partnerNodes.push(nodeObj);
     });
   }
 
-  const nodeMap = new Map(nodes.map((n) => [n.id, n]));
   const coreNode = nodes[0];
 
   // Build edge connections
@@ -286,12 +377,22 @@ export function NetworkGraphCanvas({
   }
 
   const edges: GraphEdge[] = [];
+  const usedEdgeIds = new Set<string>();
+  const makeUniqueEdgeId = (base: string): string => {
+    let candidate = base;
+    let counter = 1;
+    while (usedEdgeIds.has(candidate)) {
+      candidate = `${base}-${counter++}`;
+    }
+    usedEdgeIds.add(candidate);
+    return candidate;
+  };
 
   // Radial edges to Core SME
-  nodes.slice(1).forEach((counterNode) => {
+  nodes.slice(1).forEach((counterNode, idx) => {
     if (counterNode.category === "supplier") {
       edges.push({
-        id: `${counterNode.id}->sme`,
+        id: makeUniqueEdgeId(`edge-${counterNode.id}->sme-${idx}`),
         source: counterNode,
         target: coreNode,
         type: "incoming",
@@ -300,7 +401,7 @@ export function NetworkGraphCanvas({
       });
     } else if (counterNode.category === "buyer") {
       edges.push({
-        id: `sme->${counterNode.id}`,
+        id: makeUniqueEdgeId(`edge-sme->${counterNode.id}-${idx}`),
         source: coreNode,
         target: counterNode,
         type: "outgoing",
@@ -309,7 +410,7 @@ export function NetworkGraphCanvas({
       });
     } else {
       edges.push({
-        id: `sme<->${counterNode.id}`,
+        id: makeUniqueEdgeId(`edge-sme<->${counterNode.id}-${idx}`),
         source: coreNode,
         target: counterNode,
         type: "partner",
@@ -320,34 +421,30 @@ export function NetworkGraphCanvas({
   });
 
   // Cross-edges between counterparties for realistic supply chain mesh
-  if (suppliers.length >= 2) {
-    const s1 = nodeMap.get(suppliers[0].id || "sup-0");
-    const s2 = nodeMap.get(suppliers[1].id || "sup-1");
-    if (s1 && s2) {
-      edges.push({
-        id: `cross-sup`,
-        source: s1,
-        target: s2,
-        type: "cross",
-        color: "#64748b",
-        volumeLabel: "Tier-2 Sync",
-      });
-    }
+  if (supplierNodes.length >= 2) {
+    const s1 = supplierNodes[0];
+    const s2 = supplierNodes[1];
+    edges.push({
+      id: makeUniqueEdgeId(`cross-sup-${s1.id}-${s2.id}`),
+      source: s1,
+      target: s2,
+      type: "cross",
+      color: "#64748b",
+      volumeLabel: "Tier-2 Sync",
+    });
   }
 
-  if (buyers.length >= 1 && partners.length >= 1) {
-    const b1 = nodeMap.get(buyers[0].id || "byr-0");
-    const p1 = nodeMap.get(partners[0].id || "prt-0");
-    if (b1 && p1) {
-      edges.push({
-        id: `cross-buyer-partner`,
-        source: p1,
-        target: b1,
-        type: "cross",
-        color: "#64748b",
-        volumeLabel: "Fulfillment",
-      });
-    }
+  if (buyerNodes.length >= 1 && partnerNodes.length >= 1) {
+    const b1 = buyerNodes[0];
+    const p1 = partnerNodes[0];
+    edges.push({
+      id: makeUniqueEdgeId(`cross-buyer-partner-${p1.id}-${b1.id}`),
+      source: p1,
+      target: b1,
+      type: "cross",
+      color: "#64748b",
+      volumeLabel: "Fulfillment",
+    });
   }
 
   // Active inspector selected entity

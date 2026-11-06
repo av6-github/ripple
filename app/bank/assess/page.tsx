@@ -62,6 +62,9 @@ function AssessmentWizardContent() {
       direction: string;
       tax_id?: string;
       is_registered_sme?: boolean;
+      id?: string;
+      role?: string;
+      type?: string;
     }>;
     edges: [number, number][];
   } | null>(null);
@@ -101,20 +104,35 @@ function AssessmentWizardContent() {
           if (app.sme_id) {
             setSelectedSmeId(app.sme_id);
           }
-          setFormData((prev) => ({
-            ...prev,
-            total_revenue: app.self_reported_revenue ?? prev.total_revenue,
-            total_assets: app.self_reported_assets ?? prev.total_assets,
-            total_liabilities: app.self_reported_liabilities ?? prev.total_liabilities,
-            total_equity: app.self_reported_equity ?? prev.total_equity,
-            net_profit: app.self_reported_net_profit ?? prev.net_profit,
-            cash_and_equivalents: app.self_reported_cash ?? prev.cash_and_equivalents,
-            current_assets: Math.round((app.self_reported_assets ?? prev.total_assets) * 0.45),
-            short_term_liabilities: Math.round((app.self_reported_liabilities ?? prev.total_liabilities) * 0.60),
-            operating_profit_ebit: Math.round((app.self_reported_net_profit ?? prev.net_profit) * 1.3),
-            gross_profit: Math.round((app.self_reported_revenue ?? prev.total_revenue) * 0.38),
-            cost_of_goods_sold: Math.round((app.self_reported_revenue ?? prev.total_revenue) * 0.62),
-          }));
+          const num = (v: any, fallback: number) => {
+            if (v === null || v === undefined) return fallback;
+            const parsed = Number(v);
+            return isNaN(parsed) ? fallback : parsed;
+          };
+
+          setFormData((prev) => {
+            const rev = num(app.self_reported_revenue, prev.total_revenue);
+            const assets = num(app.self_reported_assets, prev.total_assets);
+            const liab = num(app.self_reported_liabilities, prev.total_liabilities);
+            const eq = num(app.self_reported_equity, prev.total_equity);
+            const net = num(app.self_reported_net_profit, prev.net_profit);
+            const cash = num(app.self_reported_cash, prev.cash_and_equivalents);
+
+            return {
+              ...prev,
+              total_revenue: rev,
+              total_assets: assets,
+              total_liabilities: liab,
+              total_equity: eq,
+              net_profit: net,
+              cash_and_equivalents: cash,
+              current_assets: Math.round(assets * 0.45),
+              short_term_liabilities: Math.round(liab * 0.60),
+              operating_profit_ebit: Math.round(net * 1.3),
+              gross_profit: Math.round(rev * 0.38),
+              cost_of_goods_sold: Math.round(rev * 0.62),
+            };
+          });
         }
       })
       .catch((err) => console.error("Could not load application details:", err))
@@ -160,23 +178,27 @@ function AssessmentWizardContent() {
         if (res?.latest_statement) {
           const stmt = res.latest_statement;
           setBaselineStatement(stmt);
+          const safeNum = (v: any, fallback = 0) => {
+            const n = Number(v);
+            return isNaN(n) ? fallback : n;
+          };
           setFormData({
-            fiscal_year: stmt.fiscal_year || 2023,
-            total_assets: stmt.total_assets || 0,
-            current_assets: stmt.current_assets || 0,
-            cash_and_equivalents: stmt.cash_and_equivalents || 0,
-            inventory: stmt.inventory || 0,
-            accounts_receivable: stmt.accounts_receivable || 0,
-            total_liabilities: stmt.total_liabilities || 0,
-            short_term_liabilities: stmt.short_term_liabilities || 0,
-            total_equity: stmt.total_equity || 0,
-            total_revenue: stmt.total_revenue || 0,
-            cost_of_goods_sold: stmt.cost_of_goods_sold || 0,
-            gross_profit: stmt.gross_profit || 0,
-            operating_profit_ebit: stmt.operating_profit_ebit || 0,
-            net_profit: stmt.net_profit || 0,
-            operating_cash_flow: stmt.operating_cash_flow || 0,
-            interest_expense: stmt.interest_expense || 0,
+            fiscal_year: safeNum(stmt.fiscal_year, 2023),
+            total_assets: safeNum(stmt.total_assets, 0),
+            current_assets: safeNum(stmt.current_assets, 0),
+            cash_and_equivalents: safeNum(stmt.cash_and_equivalents, 0),
+            inventory: safeNum(stmt.inventory, 0),
+            accounts_receivable: safeNum(stmt.accounts_receivable, 0),
+            total_liabilities: safeNum(stmt.total_liabilities, 0),
+            short_term_liabilities: safeNum(stmt.short_term_liabilities, 0),
+            total_equity: safeNum(stmt.total_equity, 0),
+            total_revenue: safeNum(stmt.total_revenue, 0),
+            cost_of_goods_sold: safeNum(stmt.cost_of_goods_sold, 0),
+            gross_profit: safeNum(stmt.gross_profit, 0),
+            operating_profit_ebit: safeNum(stmt.operating_profit_ebit, 0),
+            net_profit: safeNum(stmt.net_profit, 0),
+            operating_cash_flow: safeNum(stmt.operating_cash_flow, 0),
+            interest_expense: safeNum(stmt.interest_expense, 0),
           });
         }
       })
@@ -186,9 +208,17 @@ function AssessmentWizardContent() {
   }, [selectedSmeId]);
 
   const handleInputChange = (field: string, val: string) => {
+    let parsed: number;
+    if (field === "fiscal_year") {
+      const p = parseInt(val, 10);
+      parsed = isNaN(p) ? 2023 : p;
+    } else {
+      const p = parseFloat(val);
+      parsed = isNaN(p) ? 0 : p;
+    }
     setFormData((prev) => ({
       ...prev,
-      [field]: field === "fiscal_year" ? parseInt(val) || 2023 : parseFloat(val) || 0,
+      [field]: parsed,
     }));
   };
 
@@ -345,7 +375,17 @@ function AssessmentWizardContent() {
 
     if (includeNetwork) {
       if (liveCounterparties && liveCounterparties.counterparties.length > 0) {
-        payload.network_neighbors = liveCounterparties.counterparties.map((c) => c.name);
+        payload.network_neighbors = liveCounterparties.counterparties.map((c) => {
+          const role =
+            c.role ||
+            (c.direction === "incoming"
+              ? "Tier-1 Upstream Supplier"
+              : c.direction === "outgoing"
+              ? "Downstream Enterprise Client"
+              : "Strategic Distribution Partner");
+          const id = c.tax_id || c.id || c.name;
+          return `${c.name} [ID: ${id} | Role: ${role}]`;
+        });
         payload.network_edges = liveCounterparties.edges;
       }
       // Note: If liveCounterparties is not populated, omitting network_neighbors triggers
@@ -516,7 +556,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.fiscal_year}
+                value={isNaN(Number(formData.fiscal_year)) ? 2023 : formData.fiscal_year}
                 onChange={(e) => handleInputChange("fiscal_year", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -527,7 +567,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.total_revenue}
+                value={isNaN(Number(formData.total_revenue)) ? 0 : formData.total_revenue}
                 onChange={(e) => handleInputChange("total_revenue", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -538,7 +578,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.operating_profit_ebit}
+                value={isNaN(Number(formData.operating_profit_ebit)) ? 0 : formData.operating_profit_ebit}
                 onChange={(e) => handleInputChange("operating_profit_ebit", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -550,7 +590,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.total_assets}
+                value={isNaN(Number(formData.total_assets)) ? 0 : formData.total_assets}
                 onChange={(e) => handleInputChange("total_assets", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -561,7 +601,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.current_assets}
+                value={isNaN(Number(formData.current_assets)) ? 0 : formData.current_assets}
                 onChange={(e) => handleInputChange("current_assets", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -572,7 +612,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.cash_and_equivalents}
+                value={isNaN(Number(formData.cash_and_equivalents)) ? 0 : formData.cash_and_equivalents}
                 onChange={(e) => handleInputChange("cash_and_equivalents", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -584,7 +624,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.total_liabilities}
+                value={isNaN(Number(formData.total_liabilities)) ? 0 : formData.total_liabilities}
                 onChange={(e) => handleInputChange("total_liabilities", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -595,7 +635,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.short_term_liabilities}
+                value={isNaN(Number(formData.short_term_liabilities)) ? 0 : formData.short_term_liabilities}
                 onChange={(e) => handleInputChange("short_term_liabilities", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -606,7 +646,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.total_equity}
+                value={isNaN(Number(formData.total_equity)) ? 0 : formData.total_equity}
                 onChange={(e) => handleInputChange("total_equity", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -618,7 +658,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.net_profit}
+                value={isNaN(Number(formData.net_profit)) ? 0 : formData.net_profit}
                 onChange={(e) => handleInputChange("net_profit", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -629,7 +669,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.operating_cash_flow}
+                value={isNaN(Number(formData.operating_cash_flow)) ? 0 : formData.operating_cash_flow}
                 onChange={(e) => handleInputChange("operating_cash_flow", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />
@@ -640,7 +680,7 @@ function AssessmentWizardContent() {
               </label>
               <input
                 type="number"
-                value={formData.interest_expense}
+                value={isNaN(Number(formData.interest_expense)) ? 0 : formData.interest_expense}
                 onChange={(e) => handleInputChange("interest_expense", e.target.value)}
                 className="w-full px-3 py-2 text-sm rounded-lg border border-[#3a7ca5]/40 bg-white text-[#16425b] font-mono"
               />

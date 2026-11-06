@@ -120,6 +120,17 @@ class AssessmentRepository:
                 res = cur.fetchone()
                 return dict(res) if res else None
 
+    def get_smes_by_tax_ids(self, tax_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """Retrieve multiple SME records by their Tax IDs in a single query."""
+        if not tax_ids:
+            return {}
+        query = "SELECT * FROM sme WHERE tax_id = ANY(%s);"
+        with self._get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute(query, (tax_ids,))
+                rows = cur.fetchall()
+                return {r["tax_id"]: dict(r) for r in rows}
+
     def list_all_smes(self, limit: int = 100) -> List[Dict[str, Any]]:
         """List clean, deduplicated SME records for the bank portfolio view."""
         query = """
